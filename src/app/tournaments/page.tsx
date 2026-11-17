@@ -1,22 +1,28 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { CalendarDays, LoaderCircle, Pencil, Plus, Save, Trash2, Trophy, X } from "lucide-react"
+import { CalendarDays, LoaderCircle, Pencil, Plus, Save, Search, Trash2, Trophy, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { TablePagination } from "@/components/table-pagination"
+import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
 import { apiJson } from "@/lib/api-client"
+import { useCachedData } from "@/hooks/use-cached-data"
+import { useLongPressSelect } from "@/hooks/use-long-press-select"
 import { useSession } from "@/hooks/use-session"
 import { isManager, isSuperadmin } from "@/lib/roles"
+import { cn } from "@/lib/utils"
 
 const schema = z.object({
   name: z.string().min(2, "Enter the tournament name"),
@@ -49,8 +55,6 @@ const formatLabels = {
 }
 
 export default function TournamentsPage() {
-  const [tournaments, setTournaments] = useState<Tournament[]>([])
-  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -58,6 +62,12 @@ export default function TournamentsPage() {
   const [editValues, setEditValues] = useState({ name: "", format: "LEAGUE" as Tournament["format"], oversPerInnings: 20, maxOversPerBowler: 4, ballsPerOver: 6 })
   const [savingEdit, setSavingEdit] = useState(false)
   const [deletingId, setDeletingId] = useState("")
+  const [selected, setSelected] = useState<string[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [selectionMode, setSelectionMode] = useState(false)
   const { session } = useSession()
   const canManage = isManager(session?.role)
   const canEditTournament = (tournament: Tournament) => isSuperadmin(session?.role) || (session?.role === "ADMIN" && tournament.managerId === session.userId)
@@ -75,34 +85,54 @@ export default function TournamentsPage() {
     },
   })
 
-  useEffect(() => {
-    let active = true
-    apiJson<Tournament[]>("/api/tournaments")
-      .then((data) => {
-        if (active) setTournaments(data)
-      })
-      .catch((cause: any) => {
-        if (active) setError(cause.message ?? "Unable to load tournaments")
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const tournamentsCache = useCachedData<Tournament[]>("tournaments:list", () => apiJson<Tournament[]>("/api/tournaments"))
+  const tournaments = tournamentsCache.data ?? []
+  const loading = tournamentsCache.isLoading && !tournaments.length
+
+  const visibleTournaments = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    if (!term) return tournaments
+    return tournaments.filter((tournament) =>
+      [tournament.name, formatLabels[tournament.format]].some((field) => field.toLowerCase().includes(term)),
+    )
+  }, [tournaments, query])
+
+  const pageCount = Math.max(1, Math.ceil(visibleTournaments.length / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  const pageTournaments = visibleTournaments.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const selectableIds = pageTournaments.filter((tournament) => canEditTournament(tournament)).map((tournament) => tournament.id)
+  const allVisibleSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.includes(id))
+
+  const toggleAll = () => {
+    setSelected((current) =>
+      allVisibleSelected
+        ? current.filter((id) => !selectableIds.includes(id))
+        : Array.from(new Set([...current, ...selectableIds])),
+    )
+  }
+
+  const toggleOne = (id: string) => {
+    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
+  }
+
+  const { handlers: longPressHandlers } = useLongPressSelect({
+    onLongPress: (id) => {
+      setSelectionMode(true)
+      setSelected((current) => (current.includes(id) ? current : [...current, id]))
+    },
+  })
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
     setError("")
     setSubmitting(true)
     try {
-      const created = await apiJson<Tournament>("/api/tournaments", {
+      await apiJson<Tournament>("/api/tournaments", {
         method: "POST",
         body: values,
       })
-      setTournaments((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)))
       form.reset()
       setOpen(false)
+      await tournamentsCache.refresh()
     } catch (cause: any) {
       setError(cause.message ?? "Unable to create the tournament")
     } finally {
@@ -126,12 +156,12 @@ export default function TournamentsPage() {
     setSavingEdit(true)
     setError("")
     try {
-      const updated = await apiJson<Tournament>(`/api/tournaments/${editing.id}`, {
+      await apiJson<Tournament>(`/api/tournaments/${editing.id}`, {
         method: "PATCH",
         body: editValues,
       })
-      setTournaments((current) => current.map((item) => item.id === updated.id ? updated : item))
       setEditing(null)
+      await tournamentsCache.refresh()
     } catch (cause: any) {
       setError(cause.message ?? "Unable to update the tournament")
     } finally {
@@ -145,8 +175,9 @@ export default function TournamentsPage() {
     setError("")
     try {
       await apiJson(`/api/tournaments/${tournament.id}`, { method: "DELETE" })
-      setTournaments((current) => current.filter((item) => item.id !== tournament.id))
+      setSelected((current) => current.filter((id) => id !== tournament.id))
       if (editing?.id === tournament.id) setEditing(null)
+      await tournamentsCache.refresh()
     } catch (cause: any) {
       setError(cause.message ?? "Unable to delete the tournament")
     } finally {
@@ -154,17 +185,35 @@ export default function TournamentsPage() {
     }
   }
 
+  const bulkDeleteTournaments = async () => {
+    if (!selected.length) return
+    if (!window.confirm(`Delete ${selected.length} tournament${selected.length === 1 ? "" : "s"}? Fixtures stay in place but lose their competition.`)) return
+    setBulkDeleting(true)
+    setError("")
+    try {
+      for (const id of selected) {
+        await apiJson(`/api/tournaments/${id}`, { method: "DELETE" })
+      }
+      setSelected([])
+      await tournamentsCache.refresh()
+    } catch (cause: any) {
+      setError(cause.message ?? "Unable to delete the selected tournaments")
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+          <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs">
             <Trophy className="size-4" /> Competition centre
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">Tournaments</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">Set the format and scoring rules for every fixture in an event.</p>
+          <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Tournaments</h1>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm sm:text-base">Set the format and scoring rules for every fixture in an event.</p>
         </div>
-        <Button onClick={() => setOpen((current) => !current)} disabled={!canManage}>
+        <Button onClick={() => setOpen((current) => !current)} disabled={!canManage} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
           {open ? <X /> : <Plus />}
           {open ? "Close" : "Create tournament"}
         </Button>
@@ -308,6 +357,32 @@ export default function TournamentsPage() {
         </Card>
       )}
 
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setPage(1)
+            }}
+            placeholder="Search tournaments"
+            className="h-8 pl-8 text-xs sm:h-9 sm:pl-9 sm:text-sm"
+            aria-label="Search tournaments"
+          />
+        </div>
+        {selected.length > 0 && (
+          <div className="hidden flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 lg:flex">
+            <span className="text-sm font-medium">{selected.length} selected</span>
+            <Button variant="destructive" size="sm" onClick={bulkDeleteTournaments} disabled={bulkDeleting}>
+              {bulkDeleting ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+              Delete selected
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Clear</Button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((item) => <div key={item} className="h-40 animate-pulse rounded-xl bg-muted" />)}
@@ -322,36 +397,61 @@ export default function TournamentsPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:hidden">
-            {tournaments.map((tournament) => (
-              <Card key={tournament.id}>
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><Trophy /></div>
-                    <Badge variant="secondary">{formatLabels[tournament.format]}</Badge>
-                  </div>
-                  <h2 className="mt-4 font-bold">{tournament.name}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{tournament.oversPerInnings} overs · {tournament.maxOversPerBowler} overs per bowler</p>
-                  {canEditTournament(tournament) && (
-                    <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
-                      <Button variant="outline" size="sm" onClick={() => startEditing(tournament)} aria-label={`Edit ${tournament.name}`}>
-                        <Pencil />Edit
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => deleteTournament(tournament)} disabled={deletingId === tournament.id} aria-label={`Delete ${tournament.name}`}>
-                        {deletingId === tournament.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-                        Delete
-                      </Button>
-                    </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:hidden">
+            {visibleTournaments.map((tournament) => {
+              const isSelected = selected.includes(tournament.id)
+              return (
+                <Item
+                  key={tournament.id}
+                  variant="outline"
+                  size="sm"
+                  {...longPressHandlers(tournament.id)}
+                  onClick={() => {
+                    if (selectionMode) toggleOne(tournament.id)
+                  }}
+                  className={cn(
+                    "relative gap-2.5 py-1.5",
+                    isSelected && "border-primary ring-2 ring-primary",
                   )}
-                </CardContent>
-              </Card>
-            ))}
+                >
+                  {selectionMode && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <SelectionCheck checked={isSelected} />
+                    </span>
+                  )}
+                  <ItemMedia className="size-9 shrink-0 rounded-lg bg-primary/10 text-primary">
+                    <Trophy className="size-4" />
+                  </ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="truncate text-[13px] leading-tight">{tournament.name}</ItemTitle>
+                    <ItemDescription className="truncate text-[11px]">
+                      {formatLabels[tournament.format]} · {tournament.oversPerInnings} overs · {tournament.maxOversPerBowler} per bowler
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions className="gap-0.5">
+                    {canEditTournament(tournament) && (
+                      <Button variant="ghost" size="icon-sm" onClick={() => startEditing(tournament)} aria-label={`Edit ${tournament.name}`}>
+                        <Pencil />
+                      </Button>
+                    )}
+                    {canEditTournament(tournament) && (
+                      <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => deleteTournament(tournament)} disabled={deletingId === tournament.id} aria-label={`Delete ${tournament.name}`}>
+                        {deletingId === tournament.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                      </Button>
+                    )}
+                  </ItemActions>
+                </Item>
+              )
+            })}
           </div>
 
           <Card className="hidden overflow-hidden lg:block">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label="Select all tournaments on this page" />
+                  </TableHead>
                   <TableHead>Tournament</TableHead>
                   <TableHead>Format</TableHead>
                   <TableHead className="text-right">Overs</TableHead>
@@ -361,8 +461,16 @@ export default function TournamentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tournaments.map((tournament) => (
-                  <TableRow key={tournament.id}>
+                {pageTournaments.map((tournament) => (
+                  <TableRow key={tournament.id} data-state={selected.includes(tournament.id) ? "selected" : undefined}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selected.includes(tournament.id)}
+                        onCheckedChange={() => toggleOne(tournament.id)}
+                        disabled={!canEditTournament(tournament)}
+                        aria-label={`Select ${tournament.name}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-semibold">{tournament.name}</TableCell>
                     <TableCell>{formatLabels[tournament.format]}</TableCell>
                     <TableCell className="text-right">{tournament.oversPerInnings}</TableCell>
@@ -387,9 +495,34 @@ export default function TournamentsPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination
+              page={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              total={visibleTournaments.length}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              label="tournaments"
+            />
           </Card>
         </>
       )}
+      <SelectionBar
+        count={selected.length}
+        onClear={() => {
+          setSelected([])
+          setSelectionMode(false)
+        }}
+        actions={
+          <Button variant="destructive" size="sm" onClick={bulkDeleteTournaments} disabled={bulkDeleting}>
+            {bulkDeleting ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+            Delete
+          </Button>
+        }
+      />
     </div>
   )
 }

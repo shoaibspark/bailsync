@@ -5,8 +5,10 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   CalendarDays,
+  ChevronRight,
   LayoutDashboard,
   LogOut,
+  Menu,
   ShieldCheck,
   Trophy,
   UserRound,
@@ -14,6 +16,15 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
 import { AppRole, isManager } from "@/lib/roles"
@@ -23,7 +34,7 @@ type SessionUser = {
   name: string | null
   email: string
   role: AppRole
-  clubId: string | null
+  clubIds: string[]
 }
 
 const navigation = [
@@ -36,6 +47,14 @@ const navigation = [
 
 const adminNavigation = [
   { href: "/admin/users", label: "Access", icon: ShieldCheck },
+]
+
+const bottomNavigation = [
+  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/matches", label: "Matches", icon: Trophy },
+  { href: "/tournaments", label: "Series", icon: CalendarDays },
+  { href: "/clubs", label: "Clubs", icon: UsersRound },
+  { href: "/players", label: "Players", icon: UserRound },
 ]
 
 function isActive(pathname: string, href: string) {
@@ -63,6 +82,7 @@ function BrandMark({ className }: { className?: string }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [user, setUser] = useState<SessionUser | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const overlay = pathname.includes("/overlay")
   const visibleNavigation = isManager(user?.role) ? [...navigation, ...adminNavigation] : navigation
 
@@ -91,6 +111,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [pathname])
 
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [pathname])
+
   const signOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
     setUser(null)
@@ -108,13 +132,83 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Skip to main content
       </a>
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-2 px-3 sm:h-16 sm:gap-3 sm:px-6 lg:px-8">
+          <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 shrink-0 lg:hidden"
+                aria-label="Open navigation menu"
+              >
+                <Menu />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[85vw] max-w-sm p-0">
+              <SheetHeader className="border-b p-5 text-left">
+                <SheetTitle className="flex items-center gap-2.5">
+                  <BrandMark className="size-9 rounded-xl" />
+                  Bailsync
+                </SheetTitle>
+                <SheetDescription className="text-xs">
+                  {user ? `Signed in as ${user.name || user.email}` : "Browse the workspace"}
+                </SheetDescription>
+              </SheetHeader>
+              <nav className="flex flex-col gap-1 overflow-y-auto p-3" aria-label="All sections">
+                {visibleNavigation.map((item) => {
+                  const active = isActive(pathname, item.href)
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="size-5 shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      <ChevronRight className="size-4 opacity-50" />
+                    </Link>
+                  )
+                })}
+                {user ? (
+                  <>
+                    <Separator className="my-2" />
+                    <div className="rounded-lg border bg-muted/40 p-3">
+                      <p className="truncate text-sm font-semibold">{user.name || user.email}</p>
+                      <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="secondary" className="text-[10px]">{user.role}</Badge>
+                        <Badge variant="outline" className="text-[10px]">
+                          {user.clubIds.length} club{user.clubIds.length === 1 ? "" : "s"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="mt-2 justify-start" onClick={signOut}>
+                      <LogOut data-icon="inline-start" />
+                      Sign out
+                    </Button>
+                  </>
+                ) : (
+                  <Button asChild className="mt-2">
+                    <Link href="/login">Sign in</Link>
+                  </Button>
+                )}
+              </nav>
+            </SheetContent>
+          </Sheet>
+
           <Link href="/" className="group flex shrink-0 items-center gap-2.5" aria-label="Bailsync home">
-            <BrandMark className="size-9 rounded-xl shadow-sm transition-transform group-hover:-rotate-6" />
-            <span className="text-lg font-black tracking-tight">Bailsync</span>
+            <BrandMark className="size-8 rounded-lg shadow-sm transition-transform group-hover:-rotate-6 sm:size-9 sm:rounded-xl" />
+            <span className="hidden text-base font-black tracking-tight sm:inline sm:text-lg">Bailsync</span>
           </Link>
 
-          <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
+          <nav className="ml-2 hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
             {visibleNavigation.map((item) => {
               const active = isActive(pathname, item.href)
               return (
@@ -144,12 +238,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                   <Badge variant="secondary" className="text-[10px]">{user.role}</Badge>
                 </div>
-                <Button variant="ghost" size="icon" className="size-11 sm:size-9" onClick={signOut} aria-label="Sign out">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="hidden size-9 sm:inline-flex"
+                  onClick={signOut}
+                  aria-label="Sign out"
+                >
                   <LogOut />
                 </Button>
               </>
             ) : (
-              <Button asChild size="sm" className="h-11 sm:h-8">
+              <Button asChild size="sm" className="h-9 sm:h-8">
                 <Link href="/login">Sign in</Link>
               </Button>
             )}
@@ -157,16 +257,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-4rem)] pb-[calc(6rem+env(safe-area-inset-bottom))] outline-none lg:pb-0">
+      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-4rem)] pb-[calc(5rem+env(safe-area-inset-bottom))] outline-none lg:pb-0">
         {children}
       </main>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl lg:hidden"
-        aria-label="Mobile navigation"
+        className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl lg:hidden"
+        aria-label="Primary sections"
       >
-        <div className={cn("mx-auto grid max-w-lg", visibleNavigation.length > 5 ? "grid-cols-6" : "grid-cols-5")}>
-          {visibleNavigation.map((item) => {
+        <div className="mx-auto grid max-w-lg grid-cols-5">
+          {bottomNavigation.map((item) => {
             const active = isActive(pathname, item.href)
             const Icon = item.icon
             return (
@@ -175,11 +275,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors",
+                  "flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-medium transition-colors sm:min-h-12 sm:gap-1 sm:text-[11px]",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <Icon className={cn("size-5", active && "stroke-[2.5]")} />
+                <Icon className={cn("size-4 sm:size-5", active && "stroke-[2.5]")} />
                 <span className="max-w-full truncate">{item.label}</span>
               </Link>
             )

@@ -89,7 +89,7 @@ export default async function HomePage() {
   const recentMatches = data.matches.filter((match) => match.status !== "LIVE")
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-10 lg:px-8">
       <section className="relative overflow-hidden rounded-3xl border bg-card px-5 py-8 shadow-sm sm:px-8 sm:py-10 lg:px-12 lg:py-12">
         <div className="absolute -right-24 -top-24 size-72 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute -bottom-32 left-1/3 size-72 rounded-full bg-accent/10 blur-3xl" />
@@ -105,10 +105,10 @@ export default async function HomePage() {
               Follow live matches, run scoring from any device, and keep tournaments moving even when the connection drops.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Button asChild size="lg" className="w-full sm:w-auto">
+              <Button asChild size="lg" className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
                 <Link href="/matches">Explore matches <ArrowRight data-icon="inline-end" /></Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
+              <Button asChild size="lg" variant="outline" className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
                 <Link href="/login">Score a match</Link>
               </Button>
             </div>
@@ -134,7 +134,7 @@ export default async function HomePage() {
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Match centre</p>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Live action</h2>
+            <h2 className="mt-1 text-lg font-bold tracking-tight sm:text-3xl">Live action</h2>
           </div>
           <Button asChild variant="ghost" size="sm">
             <Link href="/matches">All matches <ArrowRight data-icon="inline-end" /></Link>
@@ -159,7 +159,7 @@ export default async function HomePage() {
       <section className="mt-10">
         <div className="mb-4">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Latest results</p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Recent matches</h2>
+          <h2 className="mt-1 text-lg font-bold tracking-tight sm:text-3xl">Recent matches</h2>
         </div>
         {recentMatches.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

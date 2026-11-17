@@ -33,14 +33,14 @@ export async function POST(req: NextRequest) {
         passwordHash,
         role,
       },
-      select: { id: true, email: true, role: true, clubId: true },
+      select: { id: true, email: true, role: true },
     })
 
     const token = await signSession({
       userId: user.id,
       email: user.email,
       role: user.role as AppRole,
-      clubId: user.clubId,
+      clubIds: [],
     })
 
     return NextResponse.json(

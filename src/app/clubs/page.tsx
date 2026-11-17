@@ -1,20 +1,27 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Building2, LoaderCircle, MapPin, Pencil, Plus, Save, Trash2, UsersRound, X } from "lucide-react"
+import { Building2, LoaderCircle, MapPin, Pencil, Plus, Save, Search, Trash2, UsersRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { TablePagination } from "@/components/table-pagination"
+import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
 import { apiJson } from "@/lib/api-client"
+import { useCachedData } from "@/hooks/use-cached-data"
+import { useLongPressSelect } from "@/hooks/use-long-press-select"
 import { useSession } from "@/hooks/use-session"
 import { isSuperadmin } from "@/lib/roles"
+import { cn } from "@/lib/utils"
 
 const schema = z.object({
   name: z.string().min(2, "Enter the club name"),
@@ -30,8 +37,6 @@ type Club = {
 }
 
 export default function ClubsPage() {
-  const [clubs, setClubs] = useState<Club[]>([])
-  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -41,38 +46,64 @@ export default function ClubsPage() {
   const [editCity, setEditCity] = useState("")
   const [savingEdit, setSavingEdit] = useState(false)
   const [deletingId, setDeletingId] = useState("")
+  const [selected, setSelected] = useState<string[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [selectionMode, setSelectionMode] = useState(false)
   const { session } = useSession()
   const superadmin = isSuperadmin(session?.role)
   const canCreate = superadmin
-  const canEditClub = (club: Club) => superadmin || (session?.role === "ADMIN" && club.id === session.clubId)
+  const canEditClub = (club: Club) => superadmin || (session?.role === "ADMIN" && session.clubIds.includes(club.id))
   const canDeleteClub = superadmin
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", shortName: "", city: "" },
   })
 
-  useEffect(() => {
-    let active = true
-    apiJson<Club[]>("/api/clubs")
-      .then((data) => {
-        if (active) setClubs(data)
-      })
-      .catch((cause: any) => {
-        if (active) setError(cause.message ?? "Unable to load clubs")
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const clubsCache = useCachedData<Club[]>("clubs:list", () => apiJson<Club[]>("/api/clubs"))
+  const clubs = clubsCache.data ?? []
+  const loading = clubsCache.isLoading && !clubs.length
+
+  const filteredClubs = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    if (!term) return clubs
+    return clubs.filter((club) =>
+      [club.name, club.shortName, club.city].filter(Boolean).some((field) => String(field).toLowerCase().includes(term)),
+    )
+  }, [clubs, query])
+
+  const pageCount = Math.max(1, Math.ceil(filteredClubs.length / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  const visibleClubs = filteredClubs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const selectableIds = canDeleteClub ? visibleClubs.map((club) => club.id) : []
+  const allVisibleSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.includes(id))
+
+  const toggleAll = () => {
+    setSelected((current) =>
+      allVisibleSelected
+        ? current.filter((id) => !selectableIds.includes(id))
+        : Array.from(new Set([...current, ...selectableIds])),
+    )
+  }
+
+  const toggleOne = (id: string) => {
+    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
+  }
+
+  const { handlers: longPressHandlers } = useLongPressSelect({
+    onLongPress: (id) => {
+      setSelectionMode(true)
+      setSelected((current) => (current.includes(id) ? current : [...current, id]))
+    },
+  })
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
     setError("")
     setSubmitting(true)
     try {
-      const created = await apiJson<Club>("/api/clubs", {
+      await apiJson<Club>("/api/clubs", {
         method: "POST",
         body: {
           name: values.name,
@@ -80,9 +111,9 @@ export default function ClubsPage() {
           city: values.city || undefined,
         },
       })
-      setClubs((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)))
       form.reset()
       setOpen(false)
+      await clubsCache.refresh()
     } catch (cause: any) {
       setError(cause.message ?? "Unable to create the club")
     } finally {
@@ -102,7 +133,7 @@ export default function ClubsPage() {
     setSavingEdit(true)
     setError("")
     try {
-      const updated = await apiJson<Club>(`/api/clubs/${editing.id}`, {
+      await apiJson<Club>(`/api/clubs/${editing.id}`, {
         method: "PATCH",
         body: {
           name: editName,
@@ -110,8 +141,8 @@ export default function ClubsPage() {
           city: editCity || null,
         },
       })
-      setClubs((current) => current.map((club) => club.id === updated.id ? updated : club))
       setEditing(null)
+      await clubsCache.refresh()
     } catch (cause: any) {
       setError(cause.message ?? "Unable to update the club")
     } finally {
@@ -125,8 +156,9 @@ export default function ClubsPage() {
     setError("")
     try {
       await apiJson(`/api/clubs/${club.id}`, { method: "DELETE" })
-      setClubs((current) => current.filter((item) => item.id !== club.id))
+      setSelected((current) => current.filter((id) => id !== club.id))
       if (editing?.id === club.id) setEditing(null)
+      await clubsCache.refresh()
     } catch (cause: any) {
       setError(cause.message ?? "Unable to delete the club")
     } finally {
@@ -134,17 +166,35 @@ export default function ClubsPage() {
     }
   }
 
+  const bulkDelete = async () => {
+    if (!selected.length) return
+    if (!window.confirm(`Delete ${selected.length} club${selected.length === 1 ? "" : "s"}? Players, squads, and match history will be removed.`)) return
+    setBulkDeleting(true)
+    setError("")
+    try {
+      for (const id of selected) {
+        await apiJson(`/api/clubs/${id}`, { method: "DELETE" })
+      }
+      setSelected([])
+      await clubsCache.refresh()
+    } catch (cause: any) {
+      setError(cause.message ?? "Unable to delete the selected clubs")
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+          <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs">
             <Building2 className="size-4" /> Club directory
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">Clubs</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">Manage the teams taking part in your fixtures and tournaments.</p>
+          <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Clubs</h1>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm sm:text-base">Manage the teams taking part in your fixtures and tournaments.</p>
         </div>
-        <Button onClick={() => setOpen((current) => !current)} disabled={!canCreate}>
+        <Button onClick={() => setOpen((current) => !current)} disabled={!canCreate} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
           {open ? <X /> : <Plus />}
           {open ? "Close" : "Add club"}
         </Button>
@@ -153,7 +203,7 @@ export default function ClubsPage() {
       {!canCreate && !loading && (
         <Alert className="mb-5">
           <AlertTitle>View-only access</AlertTitle>
-          <AlertDescription>Super admins register clubs. Club admins can edit the club they manage.</AlertDescription>
+          <AlertDescription>Super admins register clubs. Club admins can edit the clubs they belong to.</AlertDescription>
         </Alert>
       )}
 
@@ -186,7 +236,7 @@ export default function ClubsPage() {
                 <Label htmlFor="club-city">City</Label>
                 <Input id="club-city" placeholder="London" {...form.register("city")} />
               </div>
-              <Button type="submit" className="h-10" disabled={submitting}>
+              <Button type="submit" className="h-8 text-xs sm:h-9 sm:text-sm" disabled={submitting}>
                 {submitting && <LoaderCircle className="animate-spin" />}
                 Create club
               </Button>
@@ -227,6 +277,34 @@ export default function ClubsPage() {
         </Card>
       )}
 
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setPage(1)
+            }}
+            placeholder="Search clubs"
+            className="h-8 pl-8 text-xs sm:h-9 sm:pl-9 sm:text-sm"
+            aria-label="Search clubs"
+          />
+        </div>
+        {selected.length > 0 && (
+          <div className="hidden items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 lg:flex">
+            <span className="text-sm font-medium">{selected.length} selected</span>
+            {canDeleteClub && (
+              <Button variant="destructive" size="sm" onClick={bulkDelete} disabled={bulkDeleting}>
+                {bulkDeleting ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                Delete selected
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Clear</Button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((item) => <div key={item} className="h-40 animate-pulse rounded-xl bg-muted" />)}
@@ -241,40 +319,68 @@ export default function ClubsPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:hidden">
-            {clubs.map((club) => (
-              <Card key={club.id}>
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 font-black text-primary">{club.shortName || club.name.slice(0, 2).toUpperCase()}</div>
-                    <Badge variant="outline">Club</Badge>
-                  </div>
-                  <h2 className="mt-4 font-bold">{club.name}</h2>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-4" />{club.city || "City not set"}</p>
-                  {(canEditClub(club) || canDeleteClub) && (
-                    <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
-                      {canEditClub(club) && (
-                        <Button variant="outline" size="sm" onClick={() => startEditing(club)} aria-label={`Edit ${club.name}`}>
-                          <Pencil />Edit
-                        </Button>
-                      )}
-                      {canDeleteClub && (
-                        <Button variant="destructive" size="sm" onClick={() => deleteClub(club)} disabled={deletingId === club.id} aria-label={`Delete ${club.name}`}>
-                          {deletingId === club.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-                          Delete
-                        </Button>
-                      )}
-                    </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:hidden">
+            {filteredClubs.map((club) => {
+              const isSelected = selected.includes(club.id)
+              return (
+                <Item
+                  key={club.id}
+                  variant="outline"
+                  size="sm"
+                  {...longPressHandlers(club.id)}
+                  onClick={() => {
+                    if (selectionMode) toggleOne(club.id)
+                  }}
+                  className={cn(
+                    "relative gap-2.5 py-1.5",
+                    isSelected && "border-primary ring-2 ring-primary",
                   )}
-                </CardContent>
-              </Card>
-            ))}
+                >
+                  {selectionMode && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <SelectionCheck checked={isSelected} />
+                    </span>
+                  )}
+                  <ItemMedia className="size-9 shrink-0 rounded-lg bg-primary/10 text-[11px] font-black text-primary">
+                    {club.shortName || club.name.slice(0, 2).toUpperCase()}
+                  </ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="truncate text-[13px] leading-tight">{club.name}</ItemTitle>
+                    <ItemDescription className="flex items-center gap-1 truncate text-[11px]">
+                      <MapPin className="size-3 shrink-0" />
+                      {club.city || "City not set"}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions className="gap-0.5">
+                    {canEditClub(club) && (
+                      <Button variant="ghost" size="icon-sm" onClick={() => startEditing(club)} aria-label={`Edit ${club.name}`}>
+                        <Pencil />
+                      </Button>
+                    )}
+                    {canDeleteClub && (
+                      <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => deleteClub(club)} disabled={deletingId === club.id} aria-label={`Delete ${club.name}`}>
+                        {deletingId === club.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                      </Button>
+                    )}
+                  </ItemActions>
+                </Item>
+              )
+            })}
           </div>
 
           <Card className="hidden overflow-hidden lg:block">
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canDeleteClub && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        onCheckedChange={toggleAll}
+                        aria-label="Select all clubs on this page"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Club</TableHead>
                   <TableHead>Short name</TableHead>
                   <TableHead>City</TableHead>
@@ -283,8 +389,17 @@ export default function ClubsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {clubs.map((club) => (
-                  <TableRow key={club.id}>
+                {visibleClubs.map((club) => (
+                  <TableRow key={club.id} data-state={selected.includes(club.id) ? "selected" : undefined}>
+                    {canDeleteClub && (
+                      <TableCell>
+                        <Checkbox
+                          checked={selected.includes(club.id)}
+                          onCheckedChange={() => toggleOne(club.id)}
+                          aria-label={`Select ${club.name}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="font-semibold">{club.name}</TableCell>
                     <TableCell>{club.shortName || "—"}</TableCell>
                     <TableCell>{club.city || "—"}</TableCell>
@@ -308,9 +423,36 @@ export default function ClubsPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination
+              page={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              total={filteredClubs.length}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              label="clubs"
+            />
           </Card>
         </>
       )}
+      <SelectionBar
+        count={selected.length}
+        onClear={() => {
+          setSelected([])
+          setSelectionMode(false)
+        }}
+        actions={
+          canDeleteClub ? (
+            <Button variant="destructive" size="sm" onClick={bulkDelete} disabled={bulkDeleting}>
+              {bulkDeleting ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+              Delete
+            </Button>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

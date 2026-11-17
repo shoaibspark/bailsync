@@ -277,7 +277,7 @@ export default function ScoringConsole() {
             {pending > 0 && <Badge variant="outline">{pending} queued</Badge>}
             {innings.isCompleted && <Badge variant="outline">Innings complete</Badge>}
           </div>
-          <h1 className="text-balance break-words text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1 className="text-balance break-words text-lg font-bold tracking-tight sm:text-3xl">
             {innings.battingClubName} vs {innings.bowlingClubName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -70,7 +70,10 @@ export default function MatchPage() {
   const canManageMatch = Boolean(
     state && session && (
       isSuperadmin(session.role) ||
-      (session.role === "ADMIN" && session.clubId && (state.homeClub?.id === session.clubId || state.awayClub?.id === session.clubId))
+      (session.role === "ADMIN" && (
+        (state.homeClub?.id && session.clubIds.includes(state.homeClub.id)) ||
+        (state.awayClub?.id && session.clubIds.includes(state.awayClub.id))
+      ))
     ),
   )
 
@@ -146,7 +149,7 @@ export default function MatchPage() {
   const recentBalls = innings?.oversTimeline.flatMap((over) => over.balls).slice(-30).reverse() ?? []
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -156,7 +159,7 @@ export default function MatchPage() {
             </Badge>
             {state.resultSummary && <Badge variant="outline">{state.resultSummary}</Badge>}
           </div>
-          <h1 className="text-balance text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
+          <h1 className="text-balance text-lg font-bold tracking-tight sm:text-3xl lg:text-4xl">
             {state.homeClub?.name ?? "Home club"} <span className="text-muted-foreground">vs</span> {state.awayClub?.name ?? "Away club"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">

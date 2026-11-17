@@ -1,6 +1,5 @@
 import type { NextRequest } from "next/server"
 import { z } from "zod"
-import { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { requireAuth, requireRole, errorResponse, json, parseBody } from "@/lib/api"
 import { isSuperadmin } from "@/lib/roles"
@@ -9,9 +8,9 @@ const updateSchema = z
   .object({
     userId: z.string().uuid(),
     role: z.enum(["SUPERADMIN", "ADMIN", "SCORER", "VIEWER"]).optional(),
-    clubId: z.string().uuid().nullable().optional(),
+    clubIds: z.array(z.string().uuid()).optional(),
   })
-  .refine((value) => value.role !== undefined || value.clubId !== undefined, {
+  .refine((value) => value.role !== undefined || value.clubIds !== undefined, {
     message: "Choose a role or club to update",
   })
 
@@ -25,21 +24,30 @@ export async function GET(req: NextRequest) {
     const users = await db.user.findMany({
       where: isSuperadmin(session.role)
         ? {}
-        : session.clubId
-          ? { clubId: session.clubId }
+        : session.clubIds.length
+          ? { clubs: { some: { clubId: { in: session.clubIds } } } }
           : { id: session.userId },
       select: {
         id: true,
         name: true,
         email: true,
         role: true,
-        clubId: true,
-        club: { select: { id: true, name: true } },
+        clubs: { select: { clubId: true, club: { select: { id: true, name: true } } } },
         createdAt: true,
       },
       orderBy: { createdAt: "asc" },
     })
-    return json(users)
+    return json(
+      users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        clubIds: user.clubs.map((membership) => membership.clubId),
+        clubs: user.clubs.map((membership) => membership.club),
+        createdAt: user.createdAt,
+      })),
+    )
   } catch (e: any) {
     if (e?.status === 401 || e?.status === 403) return errorResponse(e.status, e.message, e.code)
     return errorResponse(500, e.message ?? "Unable to load users", "SERVER_ERROR")
@@ -52,15 +60,24 @@ export async function PATCH(req: NextRequest) {
     requireRole(session, ["SUPERADMIN", "ADMIN"])
     const body = updateSchema.parse(await parseBody(req))
 
-    const target = await db.user.findUnique({ where: { id: body.userId } })
+    const target = await db.user.findUnique({
+      where: { id: body.userId },
+      include: { clubs: { select: { clubId: true } } },
+    })
     if (!target) return errorResponse(404, "User not found", "NOT_FOUND")
 
+    const targetClubIds = target.clubs.map((membership) => membership.clubId)
+
     if (!isSuperadmin(session.role)) {
-      if (!session.clubId || target.clubId !== session.clubId) {
-        return errorResponse(403, "You can only manage users in your own club", "FORBIDDEN")
+      const sharesClub = targetClubIds.some((clubId) => session.clubIds.includes(clubId))
+      if (!sharesClub) {
+        return errorResponse(403, "You can only manage users in your own clubs", "FORBIDDEN")
       }
-      if (body.clubId !== undefined) {
-        return errorResponse(403, "Only a super admin can move users between clubs", "FORBIDDEN")
+      if (body.clubIds !== undefined) {
+        const outsideScope = body.clubIds.some((clubId) => !session.clubIds.includes(clubId))
+        if (outsideScope) {
+          return errorResponse(403, "You can only assign your own clubs", "FORBIDDEN")
+        }
       }
       if (body.role !== undefined && body.role !== "SCORER" && body.role !== "VIEWER") {
         return errorResponse(403, "Club admins can only assign scorer or viewer access", "FORBIDDEN")
@@ -77,18 +94,35 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const data: Prisma.UserUpdateInput = {}
-    if (body.role !== undefined) data.role = body.role
-    if (body.clubId !== undefined) {
-      data.club = body.clubId === null ? { disconnect: true } : { connect: { id: body.clubId } }
-    }
-
     const user = await db.user.update({
       where: { id: body.userId },
-      data,
-      select: { id: true, name: true, email: true, role: true, clubId: true },
+      data: {
+        ...(body.role !== undefined ? { role: body.role } : {}),
+        ...(body.clubIds !== undefined
+          ? {
+              clubs: {
+                deleteMany: {},
+                create: body.clubIds.map((clubId) => ({ clubId })),
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        clubs: { select: { clubId: true } },
+      },
     })
-    return json(user)
+
+    return json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      clubIds: user.clubs.map((membership) => membership.clubId),
+    })
   } catch (e: any) {
     if (e instanceof z.ZodError) return errorResponse(400, "Choose a valid role", "VALIDATION_ERROR")
     if (e?.status === 401 || e?.status === 403) return errorResponse(e.status, e.message, e.code)

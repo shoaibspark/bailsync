@@ -8,10 +8,20 @@ export const dynamic = "force-dynamic"
 const bowlerWicketTypes = new Set(["BOWLED", "CAUGHT", "LBW", "STUMPED", "HIT_WICKET"])
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
+  const searchParams = req.nextUrl.searchParams
+  const fromParam = searchParams.get("from")
+  const toParam = searchParams.get("to")
+  const from = fromParam ? new Date(fromParam) : null
+  const to = toParam ? new Date(toParam) : null
+  const hasRange = Boolean(from || to)
+  if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+    return Response.json({ error: { message: "Invalid date range", code: "VALIDATION_ERROR" } }, { status: 400 })
+  }
+
   const player = await db.player.findUnique({
     where: { id },
     include: { club: { select: { id: true, name: true } } },
@@ -28,6 +38,18 @@ export async function GET(
         { fielderId: id },
       ],
       deletedAt: null,
+      ...(hasRange
+        ? {
+            innings: {
+              match: {
+                scheduledAt: {
+                  ...(from ? { gte: from } : {}),
+                  ...(to ? { lte: to } : {}),
+                },
+              },
+            },
+          }
+        : {}),
     },
     include: { innings: { select: { id: true, matchId: true } } },
     orderBy: { sequenceNumber: "asc" },
@@ -97,5 +119,6 @@ export async function GET(
     club: player.club,
     role: player.role,
     jerseyNumber: player.jerseyNumber,
+    range: hasRange ? { from: from?.toISOString() ?? null, to: to?.toISOString() ?? null } : null,
   })
 }

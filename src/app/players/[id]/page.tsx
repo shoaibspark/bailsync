@@ -1,13 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowLeft, Award, BarChart3, Shield } from "lucide-react"
+import { format } from "date-fns"
+import { ArrowLeft, Award, BarChart3, Shield, TrendingUp } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AnimatedNumber } from "@/components/animated-number"
+import { DateRangePicker, type DateRange } from "@/components/date-range-picker"
+import { Button } from "@/components/ui/button"
+import { useCachedData } from "@/hooks/use-cached-data"
 
 type Stats = {
   name: string
@@ -44,35 +48,37 @@ type Stats = {
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [range, setRange] = useState<DateRange>({ from: undefined, to: undefined })
   const [error, setError] = useState("")
 
-  useEffect(() => {
-    let active = true
-    fetch(`/api/players/${id}/stats`, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json()
-        if (!response.ok) throw new Error(payload?.error?.message ?? "Unable to load player statistics")
-        return payload
-      })
-      .then((data: Stats) => {
-        if (active) setStats(data)
-      })
-      .catch((cause: any) => {
-        if (active) setError(cause.message ?? "Unable to load player statistics")
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [id])
+  const statsKey = useMemo(() => {
+    const params = new URLSearchParams()
+    if (range.from) params.set("from", range.from.toISOString())
+    if (range.to) params.set("to", range.to.toISOString())
+    const query = params.toString()
+    return query ? `players:stats:${id}?${query}` : `players:stats:${id}`
+  }, [id, range])
+
+  const statsCache = useCachedData<Stats>(
+    statsKey,
+    async () => {
+      const params = new URLSearchParams()
+      if (range.from) params.set("from", range.from.toISOString())
+      if (range.to) params.set("to", range.to.toISOString())
+      const query = params.toString()
+      const response = await fetch(`/api/players/${id}/stats${query ? `?${query}` : ""}`)
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload?.error?.message ?? "Unable to load player statistics")
+      return payload as Stats
+    },
+  )
+
+  const stats = statsCache.data
+  const loading = statsCache.isLoading && !stats
 
   if (loading) return <div className="mx-auto max-w-6xl px-4 py-10"><div className="h-80 animate-pulse rounded-2xl bg-muted" /></div>
 
-  if (!stats) return <div className="mx-auto max-w-3xl px-4 py-10"><Alert variant="destructive"><AlertTitle>Player unavailable</AlertTitle><AlertDescription>{error || "Player not found"}</AlertDescription></Alert></div>
+  if (!stats) return <div className="mx-auto max-w-3xl px-4 py-10"><Alert variant="destructive"><AlertTitle>Player unavailable</AlertTitle><AlertDescription>{statsCache.error || error || "Player not found"}</AlertDescription></Alert></div>
 
   const battingRows = [
     ["Matches", stats.batting.matches],
@@ -96,23 +102,51 @@ export default function PlayerPage() {
     ["Maidens", stats.bowling.maidens],
   ]
 
+  const rangeActive = Boolean(range.from || range.to)
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
       <ButtonBack />
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <div className="flex size-16 items-center justify-center rounded-2xl bg-primary text-xl font-black text-primary-foreground shadow-sm">{stats.jerseyNumber ?? "—"}</div>
           <div>
             <div className="mb-1 flex flex-wrap items-center gap-2"><Badge variant="secondary">{stats.role.replaceAll("_", " ")}</Badge>{stats.club && <Badge variant="outline">{stats.club.name}</Badge>}</div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{stats.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Player career record</p>
+            <h1 className="text-xl font-bold tracking-tight sm:text-4xl">{stats.name}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {rangeActive ? "Performance in selected window" : "Player career record"}
+            </p>
           </div>
         </div>
-        <div className="flex gap-3">
-          <Card className="min-w-28 border-primary/20 bg-primary/[0.04]"><CardContent className="p-4 text-center"><AnimatedNumber value={stats.batting.runs} className="text-3xl font-black" /><p className="mt-1 text-xs text-muted-foreground">Career runs</p></CardContent></Card>
+        <div className="flex flex-wrap gap-3">
+          <Card className="min-w-28 border-primary/20 bg-primary/[0.04]"><CardContent className="p-4 text-center"><AnimatedNumber value={stats.batting.runs} className="text-3xl font-black" /><p className="mt-1 text-xs text-muted-foreground">Runs</p></CardContent></Card>
           <Card className="min-w-28 border-primary/20 bg-primary/[0.04]"><CardContent className="p-4 text-center"><AnimatedNumber value={stats.bowling.wickets} className="text-3xl font-black" /><p className="mt-1 text-xs text-muted-foreground">Wickets</p></CardContent></Card>
         </div>
       </div>
+
+      <Card className="mb-4 sm:mb-6">
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <TrendingUp className="mt-0.5 size-4 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-semibold">Date range</p>
+              <p className="text-xs text-muted-foreground">
+                {rangeActive
+                  ? `${range.from ? format(range.from, "dd MMM yyyy") : "Start"} → ${range.to ? format(range.to, "dd MMM yyyy") : "Today"}`
+                  : "Showing the full career. Pick a range to analyse form."}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} className="w-full sm:w-64" />
+            {rangeActive && (
+              <Button variant="ghost" size="sm" onClick={() => setRange({ from: undefined, to: undefined })}>
+                Reset
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>

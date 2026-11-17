@@ -171,11 +171,11 @@ export default function MatchSetupPage() {
   const ready = homeXI.length === 11 && awayXI.length === 11 && Boolean(tossWinner)
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-9 lg:px-8">
       <Button asChild variant="ghost" size="sm" className="mb-5 -ml-2"><Link href={`/matches/${match.id}`}><ArrowLeft />Back to match</Link></Button>
       <div className="mb-7">
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary"><ShieldCheck className="size-4" /> Match setup</div>
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{match.homeClub.name} vs {match.awayClub.name}</h1>
+        <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs"><ShieldCheck className="size-4" /> Match setup</div>
+        <h1 className="text-lg font-bold tracking-tight sm:text-3xl sm:text-4xl">{match.homeClub.name} vs {match.awayClub.name}</h1>
         <p className="mt-2 text-muted-foreground">Record the toss, confirm both XIs, and make the first innings ready.</p>
       </div>
 

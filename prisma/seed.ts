@@ -23,6 +23,17 @@ async function main() {
     },
   })
 
+  const legacySuperadmin = await prisma.user.upsert({
+    where: { email: "superadmin@bailsync.local" },
+    update: { role: ROLE_SUPERADMIN, passwordHash },
+    create: {
+      name: "Bailsync Super Admin",
+      email: "superadmin@bailsync.local",
+      passwordHash,
+      role: ROLE_SUPERADMIN,
+    },
+  })
+
   const admin = await prisma.user.upsert({
     where: { email: "admin@bailsync.local" },
     update: { role: ROLE_ADMIN, passwordHash },
@@ -78,9 +89,18 @@ async function main() {
 
   console.log("Seeded clubs:", { eagles: eagles.id, hawks: hawks.id })
 
-  await prisma.user.update({ where: { id: admin.id }, data: { clubId: eagles.id } })
-  await prisma.user.update({ where: { id: scorer1.id }, data: { clubId: eagles.id } })
-  await prisma.user.update({ where: { id: scorer2.id }, data: { clubId: hawks.id } })
+  const setClubs = async (userId: string, clubIds: string[]) => {
+    await prisma.userClub.deleteMany({ where: { userId } })
+    if (clubIds.length) {
+      await prisma.userClub.createMany({ data: clubIds.map((clubId) => ({ userId, clubId })) })
+    }
+  }
+
+  await setClubs(admin.id, [eagles.id, hawks.id])
+  await setClubs(legacySuperadmin.id, [eagles.id, hawks.id])
+  await setClubs(scorer1.id, [eagles.id])
+  await setClubs(scorer2.id, [hawks.id])
+  await setClubs(superadmin.id, [eagles.id, hawks.id])
 
   // ---- Players (11 per club) ----
 const player = (

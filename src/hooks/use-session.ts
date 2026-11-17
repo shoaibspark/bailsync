@@ -7,7 +7,7 @@ export type Session = {
   userId: string
   email: string
   role: AppRole
-  clubId: string | null
+  clubIds: string[]
 }
 
 type SessionResponse = {
@@ -16,7 +16,7 @@ type SessionResponse = {
     name: string | null
     email: string
     role: AppRole
-    clubId: string | null
+    clubIds: string[]
   } | null
 }
 
@@ -37,7 +37,7 @@ export function useSession(): { session: Session | null; loading: boolean } {
           userId: payload.user.id,
           email: payload.user.email,
           role: payload.user.role,
-          clubId: payload.user.clubId,
+          clubIds: payload.user.clubIds ?? [],
         })
       })
       .catch(() => {})

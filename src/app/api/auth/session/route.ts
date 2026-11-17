@@ -20,9 +20,11 @@ export async function GET(req: NextRequest) {
       name: true,
       email: true,
       role: true,
-      clubId: true,
+      clubs: { select: { clubId: true } },
     },
   })
 
-  return json({ user })
+  if (!user) return json({ user: null })
+
+  return json({ user: { ...user, clubIds: user.clubs.map((club) => club.clubId) } })
 }

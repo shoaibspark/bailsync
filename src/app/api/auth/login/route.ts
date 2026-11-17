@@ -16,7 +16,10 @@ export const dynamic = "force-dynamic"
 export async function POST(req: NextRequest) {
   try {
     const body = loginSchema.parse(await req.json())
-    const user = await db.user.findUnique({ where: { email: body.email } })
+    const user = await db.user.findUnique({
+      where: { email: body.email },
+      include: { clubs: { select: { clubId: true } } },
+    })
     if (!user) {
       return errorResponse(401, "Invalid credentials", "INVALID_CREDENTIALS")
     }
@@ -29,7 +32,7 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       email: user.email,
       role: user.role as AppRole,
-      clubId: user.clubId,
+      clubIds: user.clubs.map((club) => club.clubId),
     })
 
     return new Response(

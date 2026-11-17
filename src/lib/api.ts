@@ -68,13 +68,13 @@ export function requireManager(session: Session) {
 
 export function canManageClub(session: Session, clubId: string | null | undefined): boolean {
   if (isSuperadmin(session.role)) return true
-  if (session.role !== "ADMIN") return false
-  return Boolean(session.clubId) && session.clubId === clubId
+  if (session.role !== "ADMIN" || !clubId) return false
+  return session.clubIds.includes(clubId)
 }
 
 export function requireClubManager(session: Session, clubId: string | null | undefined) {
   if (!canManageClub(session, clubId)) {
-    throw new ApiError(403, "You can only manage your own club", "FORBIDDEN")
+    throw new ApiError(403, "You can only manage your own clubs", "FORBIDDEN")
   }
 }
 
@@ -83,8 +83,8 @@ export function canManageMatch(
   match: { homeClubId: string; awayClubId: string },
 ): boolean {
   if (isSuperadmin(session.role)) return true
-  if (session.role !== "ADMIN" || !session.clubId) return false
-  return match.homeClubId === session.clubId || match.awayClubId === session.clubId
+  if (session.role !== "ADMIN") return false
+  return session.clubIds.includes(match.homeClubId) || session.clubIds.includes(match.awayClubId)
 }
 
 export function requireMatchManager(
@@ -92,7 +92,7 @@ export function requireMatchManager(
   match: { homeClubId: string; awayClubId: string },
 ) {
   if (!canManageMatch(session, match)) {
-    throw new ApiError(403, "You can only manage matches for your own club", "FORBIDDEN")
+    throw new ApiError(403, "You can only manage matches for your own clubs", "FORBIDDEN")
   }
 }
 

@@ -63,7 +63,7 @@ export default function NewMatchPage() {
         if (!active) return
         setClubs(clubData)
         setTournaments(tournamentData)
-        const ownClub = session?.role === "ADMIN" ? clubData.find((club) => club.id === session.clubId) : undefined
+        const ownClub = session?.role === "ADMIN" ? clubData.find((club) => session.clubIds.includes(club.id)) : undefined
         const home = ownClub ?? clubData[0]
         const away = clubData.find((club) => club.id !== home?.id)
         if (home) form.setValue("homeClubId", home.id)
@@ -78,7 +78,7 @@ export default function NewMatchPage() {
     return () => {
       active = false
     }
-  }, [form, session?.clubId, session?.role])
+  }, [form, session?.clubIds, session?.role])
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
     setError("")
@@ -106,12 +106,12 @@ export default function NewMatchPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
+    <div className="mx-auto w-full max-w-4xl px-4 py-4 sm:px-6 sm:py-9 lg:px-8">
       <Button asChild variant="ghost" size="sm" className="mb-5 -ml-2"><Link href="/matches"><ArrowLeft />Back to matches</Link></Button>
       <div className="mb-7">
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary"><Swords className="size-4" /> New fixture</div>
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Create a match</h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground">Choose the teams and basic rules. You’ll confirm the toss and XIs in the next step.</p>
+        <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs"><Swords className="size-4" /> New fixture</div>
+        <h1 className="text-lg font-bold tracking-tight sm:text-3xl sm:text-4xl">Create a match</h1>
+        <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">Choose the teams and basic rules. You’ll confirm the toss and XIs in the next step.</p>
       </div>
 
       {!canManage && !loading && (

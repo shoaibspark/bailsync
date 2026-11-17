@@ -17,7 +17,7 @@ export type Session = {
   userId: string
   email: string
   role: AppRole
-  clubId: string | null
+  clubIds: string[]
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -76,11 +76,17 @@ export function extractToken(cookie: string | undefined): string | null {
 export { COOKIE_NAME }
 
 export async function getUserByEmail(email: string) {
-  return db.user.findUnique({ where: { email } })
+  return db.user.findUnique({
+    where: { email },
+    include: { clubs: { select: { clubId: true } } },
+  })
 }
 
 export async function getUserById(userId: string) {
-  return db.user.findUnique({ where: { id: userId } })
+  return db.user.findUnique({
+    where: { id: userId },
+    include: { clubs: { select: { clubId: true } } },
+  })
 }
 
 export async function isFirstUser(): Promise<boolean> {
