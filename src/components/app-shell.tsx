@@ -5,7 +5,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   CalendarDays,
-  CircleDot,
   LayoutDashboard,
   LogOut,
   ShieldCheck,
@@ -42,6 +41,23 @@ const adminNavigation = [
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/"
   return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} aria-hidden="true" focusable="false">
+      <rect width="32" height="32" rx="8" fill="#0f172a" />
+      <circle cx="16" cy="13" r="7" fill="#fbbf24" />
+      <path d="M13.6 6.8C11.6 9.6 11.6 16.4 13.6 19.2" fill="none" stroke="#0f172a" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M18.4 6.8C20.4 9.6 20.4 16.4 18.4 19.2" fill="none" stroke="#0f172a" strokeWidth="1.4" strokeLinecap="round" />
+      <g fill="#f8fafc">
+        <rect x="10.4" y="21" width="11.2" height="1.8" rx="0.9" />
+        <rect x="10.4" y="22" width="1.8" height="7" rx="0.9" />
+        <rect x="15.1" y="22" width="1.8" height="7" rx="0.9" />
+        <rect x="19.8" y="22" width="1.8" height="7" rx="0.9" />
+      </g>
+    </svg>
+  )
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -94,9 +110,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <Link href="/" className="group flex shrink-0 items-center gap-2.5" aria-label="Bailsync home">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-6">
-              <CircleDot className="size-5" />
-            </span>
+            <BrandMark className="size-9 rounded-xl shadow-sm transition-transform group-hover:-rotate-6" />
             <span className="text-lg font-black tracking-tight">Bailsync</span>
           </Link>
 

@@ -32,6 +32,12 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     icons: [
       {
+        src: "/icons/icon.svg",
+        sizes: "any",
+        type: "image/svg+xml",
+        purpose: "any",
+      },
+      {
         src: "/icons/icon-72x72.png",
         sizes: "72x72",
         type: "image/png",
@@ -72,6 +78,12 @@ export default function manifest(): MetadataRoute.Manifest {
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
+      },
+      {
+        src: "/icons/icon-maskable-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
       },
       {
         src: "/icons/icon-maskable-512x512.png",

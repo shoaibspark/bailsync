@@ -19,9 +19,15 @@
 
 ## PWA
 - Service worker: hand-written `public/sw.js` chosen over Serwist because the caching rules are simple and precise (never intercept SSE/mutating/auth), avoiding a heavier dependency. Registered in production only via `src/components/providers.tsx`; disabled in `next dev`.
-- Caching: app shell CacheFirst (precached), pages NetworkFirst → offline fallback (`/offline`), read APIs StaleWhileRevalidate, images CacheFirst. SSE stream and all mutating/auth requests bypass the cache.
-- Manifest: `src/app/manifest.ts` (MetadataRoute), icons generated from `scripts/icon-source.svg` via `scripts/generate-icons.ts` (sharp) — 192/512 `any`, 512 `maskable`, 180 apple-touch-icon, favicon. Shortcuts: Live Matches, Score a Match, Tournaments.
+- Caching: app shell CacheFirst (precached, including manifest + app icons), pages NetworkFirst → offline fallback (`/offline`), read APIs StaleWhileRevalidate, images CacheFirst. SSE stream and all mutating/auth requests bypass the cache.
+- Manifest: `src/app/manifest.ts` (MetadataRoute), icons generated from `scripts/icon-source.svg` via `scripts/generate-icons.ts` (sharp) — 72/96/128/144/152/192/384/512 `any`, 192/512 `maskable`, 180 apple-touch-icon, multi-size `src/app/favicon.ico` (16/32/48), SVG `src/app/icon.svg`, Safari pinned-tab `mask-icon`. Shortcuts: Live Matches, Score a Match, Tournaments.
 - iOS limitation: no `beforeinstallprompt` / Background Sync; users use "Share → Add to Home Screen". Foreground IndexedDB flush is the guaranteed offline path.
+
+## App iconography
+- Brand mark: cricket ball with seam above a three-stump wicket, on a slate `#0f172a` rounded square (`scripts/icon-source.svg`). Chosen because the ball + wicket silhouette stays legible at 16px (favicon) and 72px (Android launcher) without losing meaning.
+- `scripts/icon-maskable.svg` keeps the same mark at 74% scale on a full-bleed square so Android's adaptive-icon mask never clips it (80% safe zone).
+- `scripts/icon-mask.svg` is a single-colour silhouette for Safari pinned tabs (`mask-icon`).
+- `npm run pwa:icons` regenerates every icon variant plus `src/app/favicon.ico`; the in-app header logo reuses the same artwork inline (`BrandMark` in `src/components/app-shell.tsx`).
 
 ## Theme tokens (high-contrast, outdoor-readable)
 - Base color: `zinc` (near-black foreground `#0f172a` on white background `#ffffff` in light mode).

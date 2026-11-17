@@ -7,7 +7,7 @@
 // NEVER cached: SSE stream, mutating requests (POST/PATCH/DELETE), auth routes,
 // responses with Set-Cookie/Authorization.
 
-const CACHE_NAME = "bailsync-v1"
+const CACHE_NAME = "bailsync-v2"
 const SHELL_URLS = [
   "/",
   "/login",
@@ -15,6 +15,13 @@ const SHELL_URLS = [
   "/clubs",
   "/tournaments",
   "/offline",
+  "/manifest.webmanifest",
+  "/favicon.png",
+  "/icons/icon.svg",
+  "/icons/icon-192x192.png",
+  "/icons/icon-512x512.png",
+  "/icons/icon-maskable-512x512.png",
+  "/icons/apple-touch-icon.png",
 ]
 const API_CACHE_NAME = "bailsync-api-v1"
 

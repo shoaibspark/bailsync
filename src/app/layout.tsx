@@ -12,12 +12,15 @@ export const metadata: Metadata = {
   description: "Offline-resilient club cricket scoring and tournament management.",
   authors: [{ name: "Bailsync" }],
   formatDetection: { telephone: false },
-  icons: [
-    { rel: "icon", sizes: "192x192", type: "image/png", url: "/icons/icon-192x192.png" },
-    { rel: "icon", sizes: "512x512", type: "image/png", url: "/icons/icon-512x512.png" },
-    { rel: "apple-touch-icon", sizes: "180x180", type: "image/png", url: "/icons/apple-touch-icon.png" },
-    { rel: "mask-icon", color: "#0f172a", url: "/icons/icon-maskable-512x512.png" },
-  ],
+  icons: {
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml", sizes: "any" },
+      { url: "/icons/icon-192x192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512x512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    other: [{ rel: "mask-icon", url: "/icons/mask-icon.svg", color: "#0f172a" }],
+  },
   openGraph: {
     siteName: "Bailsync",
     title: "Bailsync — Cricket Scoring",
