@@ -23,7 +23,6 @@ export type DateRange = {
 const presets = [
   { label: "7 days", days: 7 },
   { label: "30 days", days: 30 },
-  { label: "90 days", days: 90 },
   { label: "12 months", days: 365 },
 ]
 
