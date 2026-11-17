@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs"
 
 const prisma = new PrismaClient()
 
+const ROLE_SUPERADMIN = "SUPERADMIN"
 const ROLE_ADMIN = "ADMIN"
 const ROLE_SCORER = "SCORER"
 const ROLE_VIEWER = "VIEWER"
@@ -11,40 +12,56 @@ async function main() {
   // ---- Users (idempotent by email) ----
   const passwordHash = await bcrypt.hash("bailsync123", 10)
 
+  const superadmin = await prisma.user.upsert({
+    where: { email: "superadmin@bailsync.local" },
+    update: { role: ROLE_SUPERADMIN, passwordHash },
+    create: {
+      name: "Bailsync Super Admin",
+      email: "superadmin@bailsync.local",
+      passwordHash,
+      role: ROLE_SUPERADMIN,
+    },
+  })
+
   const admin = await prisma.user.upsert({
     where: { email: "admin@bailsync.local" },
-    update: { role: "ADMIN", passwordHash },
+    update: { role: ROLE_ADMIN, passwordHash },
     create: {
       name: "Bailsync Admin",
       email: "admin@bailsync.local",
       passwordHash,
-      role: "ADMIN",
+      role: ROLE_ADMIN,
     },
   })
 
   const scorer1 = await prisma.user.upsert({
     where: { email: "scorer1@bailsync.local" },
-    update: { role: "SCORER", passwordHash },
+    update: { role: ROLE_SCORER, passwordHash },
     create: {
       name: "Scorer One",
       email: "scorer1@bailsync.local",
       passwordHash,
-      role: "SCORER",
+      role: ROLE_SCORER,
     },
   })
 
   const scorer2 = await prisma.user.upsert({
     where: { email: "scorer2@bailsync.local" },
-    update: { role: "SCORER", passwordHash },
+    update: { role: ROLE_SCORER, passwordHash },
     create: {
       name: "Scorer Two",
       email: "scorer2@bailsync.local",
       passwordHash,
-      role: "SCORER",
+      role: ROLE_SCORER,
     },
   })
 
-  console.log("Seeded users:", { admin: admin.email, scorer1: scorer1.email, scorer2: scorer2.email })
+  console.log("Seeded users:", {
+    superadmin: superadmin.email,
+    admin: admin.email,
+    scorer1: scorer1.email,
+    scorer2: scorer2.email,
+  })
 
   // ---- Clubs ----
   const eagles = await prisma.club.upsert({
@@ -60,6 +77,10 @@ async function main() {
   })
 
   console.log("Seeded clubs:", { eagles: eagles.id, hawks: hawks.id })
+
+  await prisma.user.update({ where: { id: admin.id }, data: { clubId: eagles.id } })
+  await prisma.user.update({ where: { id: scorer1.id }, data: { clubId: eagles.id } })
+  await prisma.user.update({ where: { id: scorer2.id }, data: { clubId: hawks.id } })
 
   // ---- Players (11 per club) ----
 const player = (
@@ -114,7 +135,7 @@ const player = (
   // ---- Tournament ----
   const tournament = await prisma.tournament.upsert({
     where: { name: "City T20 League" },
-    update: {},
+    update: { managerId: superadmin.id },
     create: {
       name: "City T20 League",
       format: "LEAGUE",
@@ -127,6 +148,7 @@ const player = (
       pointsWin: 2,
       pointsTie: 1,
       pointsNoResult: 1,
+      managerId: superadmin.id,
     },
   })
   console.log("Seeded tournament:", tournament.id)

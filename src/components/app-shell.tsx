@@ -17,12 +17,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
+import { AppRole, isManager } from "@/lib/roles"
 
 type SessionUser = {
   id: string
   name: string | null
   email: string
-  role: "ADMIN" | "SCORER" | "VIEWER"
+  role: AppRole
   clubId: string | null
 }
 
@@ -47,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [user, setUser] = useState<SessionUser | null>(null)
   const overlay = pathname.includes("/overlay")
-  const visibleNavigation = user?.role === "ADMIN" ? [...navigation, ...adminNavigation] : navigation
+  const visibleNavigation = isManager(user?.role) ? [...navigation, ...adminNavigation] : navigation
 
   useEffect(() => {
     document.documentElement.dataset.overlay = overlay ? "true" : "false"
@@ -84,6 +85,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        Skip to main content
+      </a>
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <Link href="/" className="group flex shrink-0 items-center gap-2.5" aria-label="Bailsync home">
@@ -123,12 +130,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                   <Badge variant="secondary" className="text-[10px]">{user.role}</Badge>
                 </div>
-                <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
+                <Button variant="ghost" size="icon" className="size-11 sm:size-9" onClick={signOut} aria-label="Sign out">
                   <LogOut />
                 </Button>
               </>
             ) : (
-              <Button asChild size="sm">
+              <Button asChild size="sm" className="h-11 sm:h-8">
                 <Link href="/login">Sign in</Link>
               </Button>
             )}
@@ -136,7 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="min-h-[calc(100vh-4rem)] pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
+      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-4rem)] pb-[calc(6rem+env(safe-area-inset-bottom))] outline-none lg:pb-0">
         {children}
       </main>
 
@@ -145,7 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label="Mobile navigation"
       >
         <div className={cn("mx-auto grid max-w-lg", visibleNavigation.length > 5 ? "grid-cols-6" : "grid-cols-5")}>
-          {navigation.map((item) => {
+          {visibleNavigation.map((item) => {
             const active = isActive(pathname, item.href)
             const Icon = item.icon
             return (

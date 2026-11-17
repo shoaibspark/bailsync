@@ -3,6 +3,7 @@ import { z } from "zod"
 import { comparePassword, signSession, setSessionCookieHeader } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { errorResponse } from "@/lib/api"
+import { AppRole } from "@/lib/roles"
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     const token = await signSession({
       userId: user.id,
       email: user.email,
-      role: user.role as "ADMIN" | "SCORER" | "VIEWER",
+      role: user.role as AppRole,
       clubId: user.clubId,
     })
 

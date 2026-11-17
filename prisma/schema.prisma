@@ -12,6 +12,7 @@ datasource db {
 }
 
 enum Role {
+  SUPERADMIN
   ADMIN
   SCORER
   VIEWER
@@ -84,6 +85,7 @@ model User {
   createdAt    DateTime @default(now())
 
   activeScoredMatches Match[] @relation("ActiveScorer")
+  managedTournaments   Tournament[] @relation("TournamentManager")
 
   @@index([email])
   @@index([clubId])
@@ -146,11 +148,14 @@ model Tournament {
   pointsWin        Int                @default(2)
   pointsTie        Int                @default(1)
   pointsNoResult   Int                @default(1)
+  managerId        String?            @db.Uuid
+  manager          User?              @relation("TournamentManager", fields: [managerId], references: [id], onDelete: SetNull)
   createdAt        DateTime           @default(now())
 
   matches Match[]
 
   @@index([name])
+  @@index([managerId])
 }
 
 model Match {

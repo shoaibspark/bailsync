@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { requireAuth, requireScorer, errorResponse, json, parseBody } from "@/lib/api"
+import { requireAuth, requireSuperadmin, errorResponse, json, parseBody } from "@/lib/api"
 
 const clubSchema = z.object({
   name: z.string().min(2).max(100),
@@ -20,7 +20,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireAuth(req)
-    requireScorer(session)
+    requireSuperadmin(session)
     const body = clubSchema.parse(await parseBody(req))
     const club = await db.club.create({
       data: {

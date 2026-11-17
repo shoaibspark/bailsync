@@ -3,6 +3,7 @@ import { z } from "zod"
 import { hashPassword, isFirstUser, signSession, setSessionCookieHeader } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { errorResponse } from "@/lib/api"
+import { AppRole } from "@/lib/roles"
 
 const registerSchema = z.object({
   name: z.string().min(1).optional(),
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     const token = await signSession({
       userId: user.id,
       email: user.email,
-      role: user.role as "ADMIN" | "SCORER" | "VIEWER",
+      role: user.role as AppRole,
       clubId: user.clubId,
     })
 

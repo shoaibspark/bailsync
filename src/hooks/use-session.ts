@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { AppRole } from "@/lib/roles"
 
 export type Session = {
   userId: string
   email: string
-  role: "ADMIN" | "SCORER" | "VIEWER"
+  role: AppRole
   clubId: string | null
 }
 
@@ -14,7 +15,7 @@ type SessionResponse = {
     id: string
     name: string | null
     email: string
-    role: "ADMIN" | "SCORER" | "VIEWER"
+    role: AppRole
     clubId: string | null
   } | null
 }

@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { RotateCcw, WifiOff, RefreshCw, Settings2, Trophy, CircleAlert } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { RotateCcw, WifiOff, RefreshCw, Settings2, CircleAlert } from "lucide-react"
 import { apiJson, isNetworkError } from "@/lib/api-client"
 import { offlineQueue, flushQueue } from "@/lib/offline-queue"
 import { formatOvers, formatStrikeRate } from "@/lib/cricket-engine/formatters"
@@ -38,6 +39,7 @@ export default function ScoringConsole() {
   const [wicketType, setWicketType] = useState<(typeof WICKET_TYPES)[number]>("BOWLED")
   const [dismissedPlayerId, setDismissedPlayerId] = useState("")
   const [incomingBatterId, setIncomingBatterId] = useState("")
+  const [announcement, setAnnouncement] = useState("")
   const sequence = useRef(Date.now())
 
   const innings = useMemo(() => (state ? selectedInnings(state) : null), [state])
@@ -66,8 +68,10 @@ export default function ScoringConsole() {
       setState(data)
       setError(null)
       sequence.current = (selectedInnings(data)?.lastSequenceNumber ?? 0) + 1
+      return data
     } catch (cause: any) {
       setError(cause.message ?? "Unable to load the match")
+      return null
     }
   }, [matchId])
 
@@ -145,20 +149,28 @@ export default function ScoringConsole() {
         await offlineQueue.add(payload)
         await updatePending()
         setNotice("Delivery saved on this device and queued for sync")
+        setAnnouncement("Delivery saved offline and queued for sync")
         return
       }
       await apiJson(`/api/matches/${matchId}/innings/${inningsId}/balls`, {
         method: "POST",
         body: [payload],
       })
-      await refresh()
+      const updated = await refresh()
+      const updatedInnings = updated ? selectedInnings(updated) : null
       setNotice("Delivery recorded")
+      setAnnouncement(
+        updatedInnings
+          ? `Delivery recorded. Score ${updatedInnings.totalRuns} for ${updatedInnings.wickets} after ${updatedInnings.overs} overs`
+          : "Delivery recorded",
+      )
     } catch (cause: any) {
       if (isNetworkError(cause)) {
         try {
           await offlineQueue.add(payload)
           await updatePending()
           setNotice("Connection lost. Delivery saved locally for sync")
+          setAnnouncement("Connection lost. Delivery saved locally for sync")
         } catch {
           setError("Connection lost and the delivery could not be stored on this device")
         }
@@ -265,7 +277,7 @@ export default function ScoringConsole() {
             {pending > 0 && <Badge variant="outline">{pending} queued</Badge>}
             {innings.isCompleted && <Badge variant="outline">Innings complete</Badge>}
           </div>
-          <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1 className="text-balance break-words text-2xl font-bold tracking-tight sm:text-3xl">
             {innings.battingClubName} vs {innings.bowlingClubName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -290,36 +302,40 @@ export default function ScoringConsole() {
         </Alert>
       )}
       {notice && (
-        <Alert className="mb-4">
-          <AlertTitle>{notice}</AlertTitle>
-        </Alert>
+        <div role="status" aria-live="polite" className="mb-4 rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-sm">
+          {notice}
+        </div>
       )}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-          <Card className="overflow-hidden border-primary/20 bg-primary/[0.04]">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Score</p>
-                  <div className="mt-2 flex items-baseline font-mono font-bold tracking-tight" aria-label={`${innings.totalRuns} runs for ${innings.wickets} wickets`}>
-                    <AnimatedNumber value={innings.totalRuns} className="text-5xl" />
-                    <span className="mx-1 text-3xl text-muted-foreground">/</span>
-                    <AnimatedNumber value={innings.wickets} className="text-4xl" />
-                  </div>
-                </div>
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Trophy />
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                <span>{formatOvers(innings.legalBalls, 6)} overs</span>
-                <span>CRR {innings.crr}</span>
-                {innings.targetRuns !== undefined && <span>Target {innings.targetRuns}</span>}
-              </div>
-            </CardContent>
-          </Card>
+      <section
+        aria-label="Current score"
+        className="sticky top-16 z-30 mb-5 rounded-xl border border-primary/20 bg-card/95 p-3 shadow-sm backdrop-blur sm:p-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Innings {innings.inningsNumber} · {innings.battingClubName}
+            </p>
+            <div className="mt-1 flex items-baseline gap-2 font-mono font-bold tracking-tight" aria-hidden="true">
+              <AnimatedNumber value={innings.totalRuns} className="text-4xl sm:text-5xl" />
+              <span className="mx-1 text-2xl text-muted-foreground sm:text-3xl">/</span>
+              <AnimatedNumber value={innings.wickets} className="text-3xl sm:text-4xl" />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">{formatOvers(innings.legalBalls, 6)} overs</span>
+            <span>CRR {innings.crr}</span>
+            {innings.targetRuns !== undefined && <span className="font-semibold text-foreground">Target {innings.targetRuns}</span>}
+          </div>
+        </div>
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {`${innings.totalRuns} runs for ${innings.wickets} wickets after ${innings.overs} overs`}
+        </p>
+        <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
+      </section>
 
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
+        <div className="grid gap-3 lg:grid-cols-1">
           <div className="grid grid-cols-2 gap-3">
             <Card>
               <CardContent className="p-4">
@@ -374,7 +390,7 @@ export default function ScoringConsole() {
           <CardHeader className="border-b bg-muted/30 px-4 py-4 sm:px-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle>Record delivery</CardTitle>
+                <h2 className="text-lg font-semibold leading-none tracking-tight">Record delivery</h2>
                 <CardDescription className="mt-1">Tap the runs scored on this ball.</CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={undo} disabled={submitting || !online}>
@@ -393,6 +409,7 @@ export default function ScoringConsole() {
                   variant={runs === 6 ? "destructive" : runs >= 4 ? "secondary" : "default"}
                   onClick={() => submitBall({ runsScored: runs })}
                   disabled={submitting || !bowler}
+                  aria-label={`Record ${runs} ${runs === 1 ? "run" : "runs"}`}
                 >
                   {runs}
                 </Button>
@@ -402,22 +419,29 @@ export default function ScoringConsole() {
             <div>
               <p className="mb-2 text-sm font-semibold">Extras</p>
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "WIDE", extraRuns: 1 })} disabled={submitting || !bowler}>
+                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "WIDE", extraRuns: 1 })} disabled={submitting || !bowler} aria-label="Record wide, one extra run">
                   Wide +1
                 </Button>
-                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "NO_BALL", extraRuns: 1 })} disabled={submitting || !bowler}>
+                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "NO_BALL", extraRuns: 1 })} disabled={submitting || !bowler} aria-label="Record no ball, one extra run">
                   No ball +1
                 </Button>
-                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "BYE", extraRuns: 1 })} disabled={submitting || !bowler}>
+                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "BYE", extraRuns: 1 })} disabled={submitting || !bowler} aria-label="Record bye, one extra run">
                   Bye +1
                 </Button>
-                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "LEG_BYE", extraRuns: 1 })} disabled={submitting || !bowler}>
+                <Button variant="outline" className="h-14" onClick={() => submitBall({ runsScored: 0, extraType: "LEG_BYE", extraRuns: 1 })} disabled={submitting || !bowler} aria-label="Record leg bye, one extra run">
                   Leg bye +1
                 </Button>
               </div>
             </div>
 
-            <Button variant="destructive" className="h-14 w-full text-base" onClick={openWicket} disabled={submitting || !bowler || bench.length === 0}>
+            <Button
+              variant="destructive"
+              className="h-14 w-full text-base"
+              onClick={openWicket}
+              disabled={submitting || !bowler || bench.length === 0}
+              aria-expanded={wicketOpen}
+              aria-controls="wicket-details"
+            >
               Record wicket
             </Button>
 
@@ -438,30 +462,30 @@ export default function ScoringConsole() {
             )}
 
             {wicketOpen && (
-              <div className="rounded-xl border bg-muted/30 p-4 sm:p-5">
+              <div id="wicket-details" role="region" aria-labelledby="wicket-details-title" className="rounded-xl border bg-muted/30 p-4 sm:p-5">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="font-semibold">Wicket details</h2>
+                    <h2 id="wicket-details-title" className="font-semibold">Wicket details</h2>
                     <p className="text-sm text-muted-foreground">Choose how the batter was dismissed and who comes next.</p>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => setWicketOpen(false)}>Close</Button>
+                  <Button variant="ghost" size="sm" className="h-11 sm:h-8" onClick={() => setWicketOpen(false)} aria-label="Close wicket details">Close</Button>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <label className="grid gap-2 text-sm font-medium">
-                    Dismissal
+                  <div className="grid gap-2 text-sm font-medium">
+                    <Label id="wicket-type-label" htmlFor="wicket-type-trigger">Dismissal</Label>
                     <Select value={wicketType} onValueChange={(value) => setWicketType(value as (typeof WICKET_TYPES)[number])}>
-                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="wicket-type-trigger" aria-labelledby="wicket-type-label"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           {WICKET_TYPES.map((type) => <SelectItem key={type} value={type}>{type.replaceAll("_", " ")}</SelectItem>)}
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium">
-                    Batter out
+                  </div>
+                  <div className="grid gap-2 text-sm font-medium">
+                    <Label id="batter-out-label" htmlFor="batter-out-trigger">Batter out</Label>
                     <Select value={dismissedPlayerId} onValueChange={setDismissedPlayerId}>
-                      <SelectTrigger className="w-full"><SelectValue placeholder="Select batter" /></SelectTrigger>
+                      <SelectTrigger id="batter-out-trigger" aria-labelledby="batter-out-label"><SelectValue placeholder="Select batter" /></SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           {[striker, nonStriker].filter(Boolean).map((batter) => (
@@ -470,18 +494,18 @@ export default function ScoringConsole() {
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium">
-                    Incoming batter
+                  </div>
+                  <div className="grid gap-2 text-sm font-medium">
+                    <Label id="incoming-batter-label" htmlFor="incoming-batter-trigger">Incoming batter</Label>
                     <Select value={incomingBatterId} onValueChange={setIncomingBatterId}>
-                      <SelectTrigger className="w-full"><SelectValue placeholder="Select batter" /></SelectTrigger>
+                      <SelectTrigger id="incoming-batter-trigger" aria-labelledby="incoming-batter-label"><SelectValue placeholder="Select batter" /></SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           {bench.map((batter) => <SelectItem key={batter.playerId} value={batter.playerId}>{batter.name}</SelectItem>)}
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </label>
+                  </div>
                 </div>
                 <Button className="mt-4 w-full" onClick={recordWicket} disabled={submitting || !dismissedPlayerId || !incomingBatterId}>
                   Confirm wicket

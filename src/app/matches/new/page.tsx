@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { apiJson } from "@/lib/api-client"
 import { useSession } from "@/hooks/use-session"
+import { isManager } from "@/lib/roles"
 
 const schema = z.object({
   homeClubId: z.string().min(1, "Select the home club"),
@@ -41,7 +42,7 @@ export default function NewMatchPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const { session } = useSession()
-  const canManage = session?.role === "ADMIN" || session?.role === "SCORER"
+  const canManage = isManager(session?.role)
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -62,8 +63,11 @@ export default function NewMatchPage() {
         if (!active) return
         setClubs(clubData)
         setTournaments(tournamentData)
-        if (clubData[0]) form.setValue("homeClubId", clubData[0].id)
-        if (clubData[1]) form.setValue("awayClubId", clubData[1].id)
+        const ownClub = session?.role === "ADMIN" ? clubData.find((club) => club.id === session.clubId) : undefined
+        const home = ownClub ?? clubData[0]
+        const away = clubData.find((club) => club.id !== home?.id)
+        if (home) form.setValue("homeClubId", home.id)
+        if (away) form.setValue("awayClubId", away.id)
       })
       .catch((cause: any) => {
         if (active) setError(cause.message ?? "Unable to load match options")
@@ -74,7 +78,7 @@ export default function NewMatchPage() {
     return () => {
       active = false
     }
-  }, [form])
+  }, [form, session?.clubId, session?.role])
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
     setError("")
@@ -111,7 +115,7 @@ export default function NewMatchPage() {
       </div>
 
       {!canManage && !loading && (
-        <Alert className="mb-5"><AlertTitle>View-only access</AlertTitle><AlertDescription>Ask an administrator to change your role before creating matches.</AlertDescription></Alert>
+        <Alert className="mb-5"><AlertTitle>View-only access</AlertTitle><AlertDescription>Club admins and super admins schedule fixtures.</AlertDescription></Alert>
       )}
       {error && <Alert variant="destructive" className="mb-5"><AlertTitle>Match could not be created</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 

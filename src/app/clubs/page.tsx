@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Building2, LoaderCircle, MapPin, Plus, UsersRound, X } from "lucide-react"
+import { Building2, LoaderCircle, MapPin, Pencil, Plus, Save, Trash2, UsersRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { apiJson } from "@/lib/api-client"
 import { useSession } from "@/hooks/use-session"
+import { isSuperadmin } from "@/lib/roles"
 
 const schema = z.object({
   name: z.string().min(2, "Enter the club name"),
@@ -34,8 +35,17 @@ export default function ClubsPage() {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [editing, setEditing] = useState<Club | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editShortName, setEditShortName] = useState("")
+  const [editCity, setEditCity] = useState("")
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [deletingId, setDeletingId] = useState("")
   const { session } = useSession()
-  const canManage = session?.role === "ADMIN" || session?.role === "SCORER"
+  const superadmin = isSuperadmin(session?.role)
+  const canCreate = superadmin
+  const canEditClub = (club: Club) => superadmin || (session?.role === "ADMIN" && club.id === session.clubId)
+  const canDeleteClub = superadmin
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", shortName: "", city: "" },
@@ -80,6 +90,50 @@ export default function ClubsPage() {
     }
   }
 
+  const startEditing = (club: Club) => {
+    setEditing(club)
+    setEditName(club.name)
+    setEditShortName(club.shortName ?? "")
+    setEditCity(club.city ?? "")
+  }
+
+  const saveEditing = async () => {
+    if (!editing) return
+    setSavingEdit(true)
+    setError("")
+    try {
+      const updated = await apiJson<Club>(`/api/clubs/${editing.id}`, {
+        method: "PATCH",
+        body: {
+          name: editName,
+          shortName: editShortName || null,
+          city: editCity || null,
+        },
+      })
+      setClubs((current) => current.map((club) => club.id === updated.id ? updated : club))
+      setEditing(null)
+    } catch (cause: any) {
+      setError(cause.message ?? "Unable to update the club")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const deleteClub = async (club: Club) => {
+    if (!window.confirm(`Delete ${club.name}? This also removes its players, squads, and match history.`)) return
+    setDeletingId(club.id)
+    setError("")
+    try {
+      await apiJson(`/api/clubs/${club.id}`, { method: "DELETE" })
+      setClubs((current) => current.filter((item) => item.id !== club.id))
+      if (editing?.id === club.id) setEditing(null)
+    } catch (cause: any) {
+      setError(cause.message ?? "Unable to delete the club")
+    } finally {
+      setDeletingId("")
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -90,16 +144,16 @@ export default function ClubsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Clubs</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">Manage the teams taking part in your fixtures and tournaments.</p>
         </div>
-        <Button onClick={() => setOpen((current) => !current)} disabled={!canManage}>
+        <Button onClick={() => setOpen((current) => !current)} disabled={!canCreate}>
           {open ? <X /> : <Plus />}
           {open ? "Close" : "Add club"}
         </Button>
       </div>
 
-      {!canManage && !loading && (
+      {!canCreate && !loading && (
         <Alert className="mb-5">
           <AlertTitle>View-only access</AlertTitle>
-          <AlertDescription>Ask an administrator to change your role before creating clubs.</AlertDescription>
+          <AlertDescription>Super admins register clubs. Club admins can edit the club they manage.</AlertDescription>
         </Alert>
       )}
 
@@ -110,7 +164,7 @@ export default function ClubsPage() {
         </Alert>
       )}
 
-      {open && canManage && (
+      {open && canCreate && (
         <Card className="mb-6 border-primary/20 bg-primary/[0.03]">
           <CardHeader>
             <CardTitle>Register a new club</CardTitle>
@@ -141,6 +195,38 @@ export default function ClubsPage() {
         </Card>
       )}
 
+      {editing && (
+        <Card className="mb-6 border-primary/30 bg-primary/[0.03]">
+          <CardHeader>
+            <CardTitle>Edit {editing.name}</CardTitle>
+            <CardDescription>Update the club name, scorecard label, and city.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr_1fr_auto] lg:items-end">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-club-name">Club name</Label>
+                <Input id="edit-club-name" value={editName} onChange={(event) => setEditName(event.target.value)} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-club-short-name">Short name</Label>
+                <Input id="edit-club-short-name" value={editShortName} onChange={(event) => setEditShortName(event.target.value)} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-club-city">City</Label>
+                <Input id="edit-club-city" value={editCity} onChange={(event) => setEditCity(event.target.value)} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={saveEditing} disabled={savingEdit || editName.trim().length < 2}>
+                  {savingEdit ? <LoaderCircle className="animate-spin" /> : <Save />}
+                  Save changes
+                </Button>
+                <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((item) => <div key={item} className="h-40 animate-pulse rounded-xl bg-muted" />)}
@@ -165,6 +251,21 @@ export default function ClubsPage() {
                   </div>
                   <h2 className="mt-4 font-bold">{club.name}</h2>
                   <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-4" />{club.city || "City not set"}</p>
+                  {(canEditClub(club) || canDeleteClub) && (
+                    <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
+                      {canEditClub(club) && (
+                        <Button variant="outline" size="sm" onClick={() => startEditing(club)} aria-label={`Edit ${club.name}`}>
+                          <Pencil />Edit
+                        </Button>
+                      )}
+                      {canDeleteClub && (
+                        <Button variant="destructive" size="sm" onClick={() => deleteClub(club)} disabled={deletingId === club.id} aria-label={`Delete ${club.name}`}>
+                          {deletingId === club.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -178,6 +279,7 @@ export default function ClubsPage() {
                   <TableHead>Short name</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead className="text-right">Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -187,6 +289,21 @@ export default function ClubsPage() {
                     <TableCell>{club.shortName || "—"}</TableCell>
                     <TableCell>{club.city || "—"}</TableCell>
                     <TableCell className="text-right"><Badge variant="secondary">Active</Badge></TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        {canEditClub(club) && (
+                          <Button variant="outline" size="sm" onClick={() => startEditing(club)} aria-label={`Edit ${club.name}`}>
+                            <Pencil />Edit
+                          </Button>
+                        )}
+                        {canDeleteClub && (
+                          <Button variant="destructive" size="sm" onClick={() => deleteClub(club)} disabled={deletingId === club.id} aria-label={`Delete ${club.name}`}>
+                            {deletingId === club.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

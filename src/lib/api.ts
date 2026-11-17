@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { verifySession, extractToken, Session } from "./auth"
+import { isSuperadmin } from "./roles"
 import { decodeBody } from "./wire-codec"
 
 export interface RouteContext {
@@ -54,7 +55,63 @@ export function requireRole(session: Session, allowed: Session["role"][]) {
 }
 
 export function requireScorer(session: Session) {
-  requireRole(session, ["ADMIN", "SCORER"])
+  requireRole(session, ["SUPERADMIN", "ADMIN", "SCORER"])
+}
+
+export function requireSuperadmin(session: Session) {
+  requireRole(session, ["SUPERADMIN"])
+}
+
+export function requireManager(session: Session) {
+  requireRole(session, ["SUPERADMIN", "ADMIN"])
+}
+
+export function canManageClub(session: Session, clubId: string | null | undefined): boolean {
+  if (isSuperadmin(session.role)) return true
+  if (session.role !== "ADMIN") return false
+  return Boolean(session.clubId) && session.clubId === clubId
+}
+
+export function requireClubManager(session: Session, clubId: string | null | undefined) {
+  if (!canManageClub(session, clubId)) {
+    throw new ApiError(403, "You can only manage your own club", "FORBIDDEN")
+  }
+}
+
+export function canManageMatch(
+  session: Session,
+  match: { homeClubId: string; awayClubId: string },
+): boolean {
+  if (isSuperadmin(session.role)) return true
+  if (session.role !== "ADMIN" || !session.clubId) return false
+  return match.homeClubId === session.clubId || match.awayClubId === session.clubId
+}
+
+export function requireMatchManager(
+  session: Session,
+  match: { homeClubId: string; awayClubId: string },
+) {
+  if (!canManageMatch(session, match)) {
+    throw new ApiError(403, "You can only manage matches for your own club", "FORBIDDEN")
+  }
+}
+
+export function canManageTournament(
+  session: Session,
+  tournament: { managerId: string | null },
+): boolean {
+  if (isSuperadmin(session.role)) return true
+  if (session.role !== "ADMIN") return false
+  return tournament.managerId === session.userId
+}
+
+export function requireTournamentManager(
+  session: Session,
+  tournament: { managerId: string | null },
+) {
+  if (!canManageTournament(session, tournament)) {
+    throw new ApiError(403, "You can only manage tournaments you own", "FORBIDDEN")
+  }
 }
 
 // Parse request body: msgpack (prod) or JSON (dev). Accepts either content type.

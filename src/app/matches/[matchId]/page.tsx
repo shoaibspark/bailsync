@@ -1,19 +1,37 @@
 "use client"
 
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
-import { Activity, ArrowRight, Clock3, Radio, Settings2, Trophy } from "lucide-react"
+import { useParams, useRouter } from "next/navigation"
+import { Activity, ArrowRight, Clock3, LoaderCircle, Pencil, Radio, Save, Settings2, Trash2, Trophy } from "lucide-react"
 import { useMatchStream } from "@/hooks/use-match-stream"
 import { formatStrikeRate, wicketTypeLabel } from "@/lib/cricket-engine/formatters"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableCaption, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { AnimatedNumber } from "@/components/animated-number"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { apiJson } from "@/lib/api-client"
+import { useSession } from "@/hooks/use-session"
+import { isSuperadmin } from "@/lib/roles"
 import type { InningsState, MatchState } from "@/lib/cricket-engine/types"
+
+type MatchDetails = {
+  id: string
+  status: "SCHEDULED" | "LIVE" | "INNINGS_BREAK" | "COMPLETED" | "ABANDONED"
+  venue: string | null
+  scheduledAt: string | null
+  oversPerInnings: number
+  maxOversPerBowler: number
+  homeClubId: string
+  awayClubId: string
+}
 
 function currentInnings(state: MatchState): InningsState | null {
   if (state.currentInningsNumber === 1) return state.innings1
@@ -27,10 +45,91 @@ function inningsSummary(innings: InningsState | null) {
   return `${innings.totalRuns}/${innings.wickets} (${innings.overs})`
 }
 
+function toLocalInputValue(value: string | null) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  const offset = date.getTimezoneOffset() * 60000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
 export default function MatchPage() {
   const { matchId } = useParams<{ matchId: string }>()
+  const router = useRouter()
   const { state, connected, reconnecting } = useMatchStream(matchId)
+  const { session } = useSession()
+  const [managing, setManaging] = useState(false)
+  const [matchDetails, setMatchDetails] = useState<MatchDetails | null>(null)
+  const [manageForm, setManageForm] = useState({ venue: "", scheduledAt: "", oversPerInnings: 20, maxOversPerBowler: 4, status: "SCHEDULED" as MatchDetails["status"] })
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [manageError, setManageError] = useState("")
+  const [manageNotice, setManageNotice] = useState("")
   const innings = state ? currentInnings(state) : null
+
+  const canManageMatch = Boolean(
+    state && session && (
+      isSuperadmin(session.role) ||
+      (session.role === "ADMIN" && session.clubId && (state.homeClub?.id === session.clubId || state.awayClub?.id === session.clubId))
+    ),
+  )
+
+  const openManage = useCallback(async () => {
+    setManageError("")
+    setManageNotice("")
+    setManaging(true)
+    try {
+      const details = await apiJson<MatchDetails>(`/api/matches/${matchId}`)
+      setMatchDetails(details)
+      setManageForm({
+        venue: details.venue ?? "",
+        scheduledAt: toLocalInputValue(details.scheduledAt),
+        oversPerInnings: details.oversPerInnings,
+        maxOversPerBowler: details.maxOversPerBowler,
+        status: details.status,
+      })
+    } catch (cause: any) {
+      setManageError(cause.message ?? "Unable to load match details")
+    }
+  }, [matchId])
+
+  const saveMatch = async () => {
+    setSaving(true)
+    setManageError("")
+    setManageNotice("")
+    try {
+      await apiJson(`/api/matches/${matchId}`, {
+        method: "PATCH",
+        body: {
+          venue: manageForm.venue || null,
+          scheduledAt: manageForm.scheduledAt ? new Date(manageForm.scheduledAt).toISOString() : null,
+          oversPerInnings: manageForm.oversPerInnings,
+          maxOversPerBowler: manageForm.maxOversPerBowler,
+          status: manageForm.status,
+        },
+      })
+      setManageNotice("Match details updated")
+      router.refresh()
+    } catch (cause: any) {
+      setManageError(cause.message ?? "Unable to update the match")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteMatch = async () => {
+    if (!window.confirm("Delete this match? The fixture and every recorded delivery will be removed.")) return
+    setDeleting(true)
+    setManageError("")
+    try {
+      await apiJson(`/api/matches/${matchId}`, { method: "DELETE" })
+      router.push("/matches")
+      router.refresh()
+    } catch (cause: any) {
+      setManageError(cause.message ?? "Unable to delete the match")
+      setDeleting(false)
+    }
+  }
 
   if (!state) {
     return (
@@ -65,10 +164,83 @@ export default function MatchPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm"><Link href={`/matches/${matchId}/setup`}><Settings2 />Setup</Link></Button>
-          <Button asChild size="sm"><Link href={`/matches/${matchId}/score`}>Scoring console<ArrowRight /></Link></Button>
+          <Button asChild variant="outline" size="sm" className="h-11 sm:h-8"><Link href={`/matches/${matchId}/setup`}><Settings2 />Setup</Link></Button>
+          <Button asChild size="sm" className="h-11 sm:h-8"><Link href={`/matches/${matchId}/score`}>Scoring console<ArrowRight /></Link></Button>
+          {canManageMatch && (
+            <Button variant="ghost" size="sm" className="h-11 sm:h-8" onClick={openManage} disabled={managing}>
+              {managing ? <LoaderCircle className="animate-spin" /> : <Pencil />}
+              Manage
+            </Button>
+          )}
         </div>
       </div>
+
+      {canManageMatch && manageError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Match action failed</AlertTitle>
+          <AlertDescription>{manageError}</AlertDescription>
+        </Alert>
+      )}
+      {canManageMatch && manageNotice && (
+        <Alert className="mb-4">
+          <AlertTitle>{manageNotice}</AlertTitle>
+        </Alert>
+      )}
+
+      {canManageMatch && managing && matchDetails && (
+        <Card className="mb-6 border-primary/30 bg-primary/[0.03]">
+          <CardHeader>
+            <h2 className="text-lg font-semibold leading-none tracking-tight">Manage match</h2>
+            <CardDescription className="mt-1.5">Update the fixture details or remove the match entirely.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr_0.7fr_0.7fr_1fr] lg:items-end">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="manage-venue">Venue</Label>
+                <Input id="manage-venue" value={manageForm.venue} onChange={(event) => setManageForm((current) => ({ ...current, venue: event.target.value }))} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="manage-scheduled-at">Start time</Label>
+                <Input id="manage-scheduled-at" type="datetime-local" value={manageForm.scheduledAt} onChange={(event) => setManageForm((current) => ({ ...current, scheduledAt: event.target.value }))} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="manage-overs">Overs</Label>
+                <Input id="manage-overs" type="number" min={1} max={50} value={manageForm.oversPerInnings} onChange={(event) => setManageForm((current) => ({ ...current, oversPerInnings: Number(event.target.value) }))} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="manage-max-overs">Max per bowler</Label>
+                <Input id="manage-max-overs" type="number" min={1} max={20} value={manageForm.maxOversPerBowler} onChange={(event) => setManageForm((current) => ({ ...current, maxOversPerBowler: Number(event.target.value) }))} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="manage-status">Status</Label>
+                <Select value={manageForm.status} onValueChange={(value) => setManageForm((current) => ({ ...current, status: value as MatchDetails["status"] }))}>
+                  <SelectTrigger id="manage-status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="SCHEDULED">Scheduled</SelectItem>
+                      <SelectItem value="LIVE">Live</SelectItem>
+                      <SelectItem value="INNINGS_BREAK">Innings break</SelectItem>
+                      <SelectItem value="COMPLETED">Completed</SelectItem>
+                      <SelectItem value="ABANDONED">Abandoned</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">
+              <Button onClick={saveMatch} disabled={saving}>
+                {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+                Save changes
+              </Button>
+              <Button variant="ghost" onClick={() => setManaging(false)}>Cancel</Button>
+              <Button variant="destructive" className="sm:ml-auto" onClick={deleteMatch} disabled={deleting}>
+                {deleting ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                Delete match
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!innings ? (
         <Card className="border-dashed">
@@ -83,15 +255,18 @@ export default function MatchPage() {
         <>
           <section className="relative overflow-hidden rounded-2xl border bg-card p-5 shadow-sm sm:p-7">
             <div className="absolute -right-16 -top-20 size-64 rounded-full bg-primary/10 blur-3xl" />
-            <div className="relative grid items-end gap-6 lg:grid-cols-[1fr_auto]">
-              <div>
+            <div className="relative grid items-end gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Innings {innings.inningsNumber}</p>
-                <h2 className="mt-2 text-xl font-bold sm:text-2xl">{innings.battingClubName} batting</h2>
-                <div className="mt-4 flex items-baseline gap-2 font-mono font-black tracking-tight" aria-label={`${innings.totalRuns} runs for ${innings.wickets} wickets`}>
-                  <AnimatedNumber value={innings.totalRuns} className="text-6xl sm:text-7xl" />
+                <h2 className="mt-2 text-xl font-bold break-words sm:text-2xl">{innings.battingClubName} batting</h2>
+                <div className="mt-4 flex items-baseline gap-2 font-mono font-black tracking-tight" aria-hidden="true">
+                  <AnimatedNumber value={innings.totalRuns} className="text-5xl sm:text-7xl" />
                   <span className="text-3xl text-muted-foreground sm:text-4xl">/</span>
-                  <AnimatedNumber value={innings.wickets} className="text-5xl sm:text-6xl" />
+                  <AnimatedNumber value={innings.wickets} className="text-4xl sm:text-6xl" />
                 </div>
+                <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                  {`${innings.totalRuns} runs for ${innings.wickets} wickets after ${innings.overs} overs`}
+                </p>
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
                   <span>{innings.overs} overs</span>
                   <span>CRR {innings.crr}</span>
@@ -100,13 +275,13 @@ export default function MatchPage() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:flex">
-                <div className="min-w-32 rounded-xl border bg-background/70 p-3 text-center">
+                <div className="min-w-0 rounded-xl border bg-background/70 p-3 text-center">
                   <p className="text-xs text-muted-foreground">Striker</p>
-                  <p className="mt-1 truncate font-bold">{innings.batters.find((batter) => batter.isOnStrike)?.name ?? "—"}</p>
+                  <p className="mt-1 truncate font-bold" title={innings.batters.find((batter) => batter.isOnStrike)?.name}>{innings.batters.find((batter) => batter.isOnStrike)?.name ?? "—"}</p>
                 </div>
-                <div className="min-w-32 rounded-xl border bg-background/70 p-3 text-center">
+                <div className="min-w-0 rounded-xl border bg-background/70 p-3 text-center">
                   <p className="text-xs text-muted-foreground">Bowler</p>
-                  <p className="mt-1 truncate font-bold">{innings.bowlers.find((bowler) => bowler.isCurrent)?.name ?? "—"}</p>
+                  <p className="mt-1 truncate font-bold" title={innings.bowlers.find((bowler) => bowler.isCurrent)?.name}>{innings.bowlers.find((bowler) => bowler.isCurrent)?.name ?? "—"}</p>
                 </div>
               </div>
             </div>
@@ -117,7 +292,7 @@ export default function MatchPage() {
               {[state.innings1, state.innings2].map((item, index) => item && (
                 <Card key={item.inningsId} className={item.inningsNumber === innings.inningsNumber ? "border-primary/30" : ""}>
                   <CardContent className="flex items-center justify-between gap-4 p-4">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Innings {index + 1} · {item.battingClubName}</p>
                       <p className="mt-1 font-mono text-lg font-bold">{inningsSummary(item)}</p>
                     </div>
@@ -131,74 +306,119 @@ export default function MatchPage() {
           <Separator className="my-7" />
 
           <Tabs defaultValue="scorecard">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
-              <TabsTrigger value="scorecard" className="h-10">Scorecard</TabsTrigger>
-              <TabsTrigger value="commentary" className="h-10">Commentary</TabsTrigger>
+            <TabsList className="grid h-11 w-full max-w-md grid-cols-2">
+              <TabsTrigger value="scorecard" className="h-full">Scorecard</TabsTrigger>
+              <TabsTrigger value="commentary" className="h-full">Commentary</TabsTrigger>
             </TabsList>
 
             <TabsContent value="scorecard" className="mt-5">
-              <div className="grid items-start gap-5 lg:grid-cols-2">
-                <Card>
-                  <CardHeader><CardTitle>Batting</CardTitle><CardDescription>{innings.battingClubName}</CardDescription></CardHeader>
+              <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <Card className="min-w-0">
+                  <CardHeader><h2 className="text-lg font-semibold leading-none tracking-tight">Batting</h2><CardDescription className="mt-1.5">{innings.battingClubName}</CardDescription></CardHeader>
                   <CardContent className="px-0 sm:px-2">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Batter</TableHead>
-                          <TableHead className="text-right">R</TableHead>
-                          <TableHead className="text-right">B</TableHead>
-                          <TableHead className="text-right">4</TableHead>
-                          <TableHead className="text-right">6</TableHead>
-                          <TableHead className="text-right">SR</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {innings.batters.map((batter) => (
-                          <TableRow key={batter.playerId} className={batter.isOnStrike ? "bg-primary/[0.04]" : ""}>
-                            <TableCell className="max-w-40 whitespace-normal font-medium">
+                    <div className="divide-y sm:hidden">
+                      {innings.batters.map((batter) => (
+                        <div key={batter.playerId} className="flex items-start justify-between gap-3 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold">
                               {batter.name}
-                              {batter.isOnStrike && <span className="ml-2 text-xs text-primary">●</span>}
-                              {batter.isOut && <span className="block text-xs text-muted-foreground">{batter.dismissal?.how ? wicketTypeLabel(batter.dismissal.how) : "Out"}</span>}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{batter.runs}</TableCell>
-                            <TableCell className="text-right">{batter.balls}</TableCell>
-                            <TableCell className="text-right">{batter.fours}</TableCell>
-                            <TableCell className="text-right">{batter.sixes}</TableCell>
-                            <TableCell className="text-right">{formatStrikeRate(batter.runs, batter.balls)}</TableCell>
+                              {batter.isOnStrike && <span className="ml-2 text-xs font-semibold text-primary">On strike</span>}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {batter.isOut ? (batter.dismissal?.how ? wicketTypeLabel(batter.dismissal.how) : "Out") : "Not out"}
+                            </p>
+                          </div>
+                          <dl className="grid shrink-0 grid-cols-4 gap-x-3 gap-y-1 text-right text-xs">
+                            <div><dt className="text-muted-foreground">R</dt><dd className="font-mono text-sm font-semibold">{batter.runs}</dd></div>
+                            <div><dt className="text-muted-foreground">B</dt><dd className="font-mono text-sm">{batter.balls}</dd></div>
+                            <div><dt className="text-muted-foreground">4s</dt><dd className="font-mono text-sm">{batter.fours}</dd></div>
+                            <div><dt className="text-muted-foreground">6s</dt><dd className="font-mono text-sm">{batter.sixes}</dd></div>
+                            <div className="col-span-4"><dt className="sr-only">Strike rate</dt><dd className="font-mono text-sm text-muted-foreground">SR {formatStrikeRate(batter.runs, batter.balls)}</dd></div>
+                          </dl>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden sm:block">
+                      <Table>
+                        <TableCaption className="sr-only">{`${innings.battingClubName} batting scorecard for innings ${innings.inningsNumber}`}</TableCaption>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead scope="col">Batter</TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">R</span><span className="sr-only">Runs</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">B</span><span className="sr-only">Balls</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">4</span><span className="sr-only">Fours</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">6</span><span className="sr-only">Sixes</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">SR</span><span className="sr-only">Strike rate</span></TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {innings.batters.map((batter) => (
+                            <TableRow key={batter.playerId} className={batter.isOnStrike ? "bg-primary/[0.04]" : ""}>
+                              <TableCell className="max-w-40 whitespace-normal font-medium">
+                                {batter.name}
+                                {batter.isOnStrike && <span className="ml-2 text-xs font-semibold text-primary">On strike</span>}
+                                {batter.isOut && <span className="block text-xs text-muted-foreground">{batter.dismissal?.how ? wicketTypeLabel(batter.dismissal.how) : "Out"}</span>}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">{batter.runs}</TableCell>
+                              <TableCell className="text-right">{batter.balls}</TableCell>
+                              <TableCell className="text-right">{batter.fours}</TableCell>
+                              <TableCell className="text-right">{batter.sixes}</TableCell>
+                              <TableCell className="text-right">{formatStrikeRate(batter.runs, batter.balls)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader><CardTitle>Bowling</CardTitle><CardDescription>{innings.bowlingClubName}</CardDescription></CardHeader>
+                <Card className="min-w-0">
+                  <CardHeader><h2 className="text-lg font-semibold leading-none tracking-tight">Bowling</h2><CardDescription className="mt-1.5">{innings.bowlingClubName}</CardDescription></CardHeader>
                   <CardContent className="px-0 sm:px-2">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Bowler</TableHead>
-                          <TableHead className="text-right">O</TableHead>
-                          <TableHead className="text-right">M</TableHead>
-                          <TableHead className="text-right">R</TableHead>
-                          <TableHead className="text-right">W</TableHead>
-                          <TableHead className="text-right">Econ</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {innings.bowlers.map((bowler) => (
-                          <TableRow key={bowler.playerId} className={bowler.isCurrent ? "bg-primary/[0.04]" : ""}>
-                            <TableCell className="font-medium">{bowler.name}</TableCell>
-                            <TableCell className="text-right">{bowler.overs}</TableCell>
-                            <TableCell className="text-right">{bowler.maidens}</TableCell>
-                            <TableCell className="text-right">{bowler.runsConceded}</TableCell>
-                            <TableCell className="text-right font-semibold">{bowler.wickets}</TableCell>
-                            <TableCell className="text-right">{bowler.economy}</TableCell>
+                    <div className="divide-y sm:hidden">
+                      {innings.bowlers.map((bowler) => (
+                        <div key={bowler.playerId} className="flex items-start justify-between gap-3 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold">{bowler.name}</p>
+                            <p className="text-xs text-muted-foreground">{bowler.isCurrent ? "Bowling this over" : "Bowled earlier"}</p>
+                          </div>
+                          <dl className="grid shrink-0 grid-cols-4 gap-x-3 gap-y-1 text-right text-xs">
+                            <div><dt className="text-muted-foreground">O</dt><dd className="font-mono text-sm">{bowler.overs}</dd></div>
+                            <div><dt className="text-muted-foreground">M</dt><dd className="font-mono text-sm">{bowler.maidens}</dd></div>
+                            <div><dt className="text-muted-foreground">W</dt><dd className="font-mono text-sm font-semibold">{bowler.wickets}</dd></div>
+                            <div><dt className="text-muted-foreground">Econ</dt><dd className="font-mono text-sm">{bowler.economy}</dd></div>
+                            <div className="col-span-4"><dt className="sr-only">Runs conceded</dt><dd className="font-mono text-sm text-muted-foreground">{bowler.runsConceded} runs conceded</dd></div>
+                          </dl>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden sm:block">
+                      <Table>
+                        <TableCaption className="sr-only">{`${innings.bowlingClubName} bowling figures for innings ${innings.inningsNumber}`}</TableCaption>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead scope="col">Bowler</TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">O</span><span className="sr-only">Overs</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">M</span><span className="sr-only">Maidens</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">R</span><span className="sr-only">Runs conceded</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">W</span><span className="sr-only">Wickets</span></TableHead>
+                            <TableHead scope="col" className="text-right"><span aria-hidden="true">Econ</span><span className="sr-only">Economy</span></TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {innings.bowlers.map((bowler) => (
+                            <TableRow key={bowler.playerId} className={bowler.isCurrent ? "bg-primary/[0.04]" : ""}>
+                              <TableCell className="max-w-40 whitespace-normal font-medium">{bowler.name}</TableCell>
+                              <TableCell className="text-right">{bowler.overs}</TableCell>
+                              <TableCell className="text-right">{bowler.maidens}</TableCell>
+                              <TableCell className="text-right">{bowler.runsConceded}</TableCell>
+                              <TableCell className="text-right font-semibold">{bowler.wickets}</TableCell>
+                              <TableCell className="text-right">{bowler.economy}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -206,7 +426,7 @@ export default function MatchPage() {
 
             <TabsContent value="commentary" className="mt-5">
               <Card>
-                <CardHeader><CardTitle>Recent deliveries</CardTitle><CardDescription>Latest activity from the current innings.</CardDescription></CardHeader>
+                <CardHeader><h2 className="text-lg font-semibold leading-none tracking-tight">Recent deliveries</h2><CardDescription className="mt-1.5">Latest activity from the current innings.</CardDescription></CardHeader>
                 <CardContent>
                   {recentBalls.length === 0 ? (
                     <p className="py-8 text-center text-sm text-muted-foreground">No deliveries have been recorded yet.</p>

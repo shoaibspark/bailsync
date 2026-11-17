@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { requireAuth, requireScorer, errorResponse, json, parseBody } from "@/lib/api"
+import { requireAuth, requireManager, requireMatchManager, errorResponse, json, parseBody } from "@/lib/api"
 
 const matchSchema = z.object({
   tournamentId: z.string().uuid().optional(),
@@ -30,11 +30,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireAuth(req)
-    requireScorer(session)
+    requireManager(session)
     const body = matchSchema.parse(await parseBody(req))
     if (body.homeClubId === body.awayClubId) {
       return errorResponse(400, "Home and away clubs must be different", "INVALID_TEAMS")
     }
+    requireMatchManager(session, { homeClubId: body.homeClubId, awayClubId: body.awayClubId })
     const match = await db.match.create({
       data: {
         tournamentId: body.tournamentId ?? null,
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     if (e instanceof z.ZodError) return errorResponse(400, "Check the match details and try again", "VALIDATION_ERROR")
     if (e?.status === 401 || e?.status === 403) return errorResponse(e.status, e.message, e.code)
+    if (e?.code === "P2003") return errorResponse(404, "One of the selected clubs or tournaments no longer exists", "INVALID_REFERENCE")
     return errorResponse(500, e.message ?? "Unable to create the match", "SERVER_ERROR")
   }
 }

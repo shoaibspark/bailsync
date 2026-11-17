@@ -4,6 +4,7 @@
 
 import { SignJWT, jwtVerify } from "jose"
 import { db } from "./db"
+import { AppRole } from "./roles"
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || process.env.AUTH_SECRET || "dev-secret",
@@ -15,7 +16,7 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 export type Session = {
   userId: string
   email: string
-  role: "ADMIN" | "SCORER" | "VIEWER"
+  role: AppRole
   clubId: string | null
 }
 
@@ -87,8 +88,8 @@ export async function isFirstUser(): Promise<boolean> {
   return count === 0
 }
 
-export const SCORER_ROLES: Session["role"][] = ["ADMIN", "SCORER"]
+export const SCORER_ROLES: Session["role"][] = ["SUPERADMIN", "ADMIN", "SCORER"]
 
 export function canScore(role: Session["role"]): boolean {
-  return role === "ADMIN" || role === "SCORER"
+  return SCORER_ROLES.includes(role)
 }

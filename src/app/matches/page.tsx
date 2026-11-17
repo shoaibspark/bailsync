@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { CalendarDays, MapPin, Plus, Radio, Trophy } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { CalendarDays, LoaderCircle, MapPin, Plus, Radio, Trash2, Trophy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { apiJson } from "@/lib/api-client"
+import { useSession } from "@/hooks/use-session"
+import { isManager, isSuperadmin } from "@/lib/roles"
 
 type Match = {
   id: string
@@ -31,10 +34,16 @@ function statusVariant(status: Match["status"]) {
 }
 
 export default function MatchesPage() {
+  const router = useRouter()
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [filter, setFilter] = useState<(typeof filters)[number]>("ALL")
+  const [deletingId, setDeletingId] = useState("")
+  const { session } = useSession()
+  const canCreate = isManager(session?.role)
+  const ownsClub = (match: Match) => session?.role === "ADMIN" && Boolean(session.clubId) && (match.homeClub?.id === session.clubId || match.awayClub?.id === session.clubId)
+  const canDeleteMatch = (match: Match) => isSuperadmin(session?.role) || (ownsClub(match) && match.status === "SCHEDULED")
 
   useEffect(() => {
     let active = true
@@ -58,6 +67,22 @@ export default function MatchesPage() {
     [filter, matches],
   )
 
+  const deleteMatch = async (match: Match) => {
+    const label = `${match.homeClub?.name ?? "Home"} vs ${match.awayClub?.name ?? "Away"}`
+    if (!window.confirm(`Delete ${label}? This removes the fixture and its recorded deliveries.`)) return
+    setDeletingId(match.id)
+    setError("")
+    try {
+      await apiJson(`/api/matches/${match.id}`, { method: "DELETE" })
+      setMatches((current) => current.filter((item) => item.id !== match.id))
+      router.refresh()
+    } catch (cause: any) {
+      setError(cause.message ?? "Unable to delete the match")
+    } finally {
+      setDeletingId("")
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -68,10 +93,17 @@ export default function MatchesPage() {
           <h1 className="text-3xl font-bold tracking-tight">Matches</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">Follow every fixture from toss to result, or start a new match.</p>
         </div>
-        <Button asChild>
+        <Button asChild disabled={!canCreate}>
           <Link href="/matches/new"><Plus />New match</Link>
         </Button>
       </div>
+
+      {!canCreate && !loading && (
+        <Alert className="mb-5">
+          <AlertTitle>View-only access</AlertTitle>
+          <AlertDescription>Club admins and super admins schedule fixtures.</AlertDescription>
+        </Alert>
+      )}
 
       {error && (
         <Alert variant="destructive" className="mb-5">
@@ -105,7 +137,7 @@ export default function MatchesPage() {
             <span className="flex size-12 items-center justify-center rounded-full bg-muted"><Radio className="text-muted-foreground" /></span>
             <h2 className="mt-4 font-semibold">No matches in this view</h2>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">Try another filter or create the next fixture for your club.</p>
-            <Button asChild size="sm" className="mt-4"><Link href="/matches/new"><Plus />Create match</Link></Button>
+            {canCreate && <Button asChild size="sm" className="mt-4"><Link href="/matches/new"><Plus />Create match</Link></Button>}
           </CardContent>
         </Card>
       ) : (
@@ -139,6 +171,14 @@ export default function MatchesPage() {
                   </div>
                 </CardContent>
               </Link>
+              {canDeleteMatch(match) && (
+                <div className="flex justify-end border-t px-5 py-3">
+                  <Button variant="destructive" size="sm" onClick={() => deleteMatch(match)} disabled={deletingId === match.id} aria-label={`Delete ${match.homeClub?.name ?? "match"} versus ${match.awayClub?.name ?? "match"}`}>
+                    {deletingId === match.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                    Delete
+                  </Button>
+                </div>
+              )}
             </Card>
           ))}
         </div>

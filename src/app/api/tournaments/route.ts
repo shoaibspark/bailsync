@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { requireAuth, requireScorer, errorResponse, json, parseBody } from "@/lib/api"
+import { requireAuth, requireManager, errorResponse, json, parseBody } from "@/lib/api"
 
 const tournamentSchema = z.object({
   name: z.string().min(2).max(120),
@@ -28,9 +28,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireAuth(req)
-    requireScorer(session)
+    requireManager(session)
     const body = tournamentSchema.parse(await parseBody(req))
-    const tournament = await db.tournament.create({ data: body })
+    const tournament = await db.tournament.create({
+      data: { ...body, managerId: session.userId },
+    })
     return json(tournament, 201)
   } catch (e: any) {
     if (e instanceof z.ZodError) return errorResponse(400, "Check the tournament rules and try again", "VALIDATION_ERROR")
