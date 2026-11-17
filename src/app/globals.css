@@ -1,26 +1,141 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 150 30% 97%;
+    --foreground: 160 32% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 160 32% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 32% 10%;
+    --primary: 158 64% 27%;
+    --primary-foreground: 150 40% 98%;
+    --secondary: 152 34% 92%;
+    --secondary-foreground: 158 58% 20%;
+    --muted: 150 20% 94%;
+    --muted-foreground: 158 12% 42%;
+    --accent: 46 92% 58%;
+    --accent-foreground: 160 40% 10%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 155 22% 87%;
+    --input: 155 22% 82%;
+    --ring: 158 64% 27%;
+    --radius: 0.8rem;
+  }
+
+  .dark {
+    --background: 160 28% 7%;
+    --foreground: 145 25% 96%;
+    --card: 160 24% 10%;
+    --card-foreground: 145 25% 96%;
+    --popover: 160 24% 10%;
+    --popover-foreground: 145 25% 96%;
+    --primary: 151 52% 48%;
+    --primary-foreground: 160 40% 8%;
+    --secondary: 158 25% 16%;
+    --secondary-foreground: 150 30% 92%;
+    --muted: 158 22% 15%;
+    --muted-foreground: 153 14% 65%;
+    --accent: 45 92% 58%;
+    --accent-foreground: 160 40% 10%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 158 20% 20%;
+    --input: 158 20% 24%;
+    --ring: 151 52% 48%;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    min-width: 320px;
+    scroll-behavior: smooth;
+    background: hsl(var(--background));
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at 8% 0%, hsl(var(--primary) / 0.09), transparent 28rem),
+      radial-gradient(circle at 96% 18%, hsl(var(--accent) / 0.08), transparent 24rem);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    line-height: 1.5;
+  }
+
+  html[data-overlay="true"],
+  html[data-overlay="true"] body {
+    background: transparent;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.numberflip-digit-container {
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  transition-property: opacity;
+  transition-duration: 200ms;
+}
+
+.numberflip-digit-container.dot,
+.numberflip-digit-container.dot * {
+  width: 0.48em;
+}
+
+.numberflip-digit-container-value {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  transition-property: transform;
+  transition-duration: 1000ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.numberflip-digit-container-value span {
+  text-align: center;
+}
+
+@keyframes numberflip-animation-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
