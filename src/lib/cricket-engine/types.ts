@@ -150,6 +150,10 @@ export interface InningsState {
   isSuperOver: boolean
   lastSequenceNumber: number
 
+  // Raw event stream for this innings (filtered, sorted by sequenceNumber).
+  // Kept on the state so the client can recompute optimistically without a round trip.
+  events: BallEventInput[]
+
   // Totals
   totalRuns: number
   wickets: number

@@ -20,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DateRangePicker, type DateRange } from "@/components/date-range-picker"
 import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
 import { TablePagination } from "@/components/table-pagination"
+import { CachedSkeleton } from "@/components/cached-skeleton"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useLongPressSelect } from "@/hooks/use-long-press-select"
@@ -352,7 +353,9 @@ export default function PlayersPage() {
         </div>
       )}
 
-      {loading ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="h-40 animate-pulse rounded-xl bg-muted" />)}</div> : visiblePlayers.length === 0 ? (
+      {loading ? (
+        <CachedSkeleton isLoading={loading} dataLength={visiblePlayers.length} />
+      ) : visiblePlayers.length === 0 ? (
         <Card className="border-dashed"><CardContent className="flex flex-col items-center py-14 text-center"><span className="flex size-12 items-center justify-center rounded-full bg-muted"><UserRound className="text-muted-foreground" /></span><h2 className="mt-4 font-semibold">No players found</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">Add players to club rosters before creating match XIs.</p></CardContent></Card>
       ) : (
         <>

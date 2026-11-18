@@ -1,12 +1,13 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { Activity, ArrowRight, Clock3, LoaderCircle, Pencil, Radio, Save, Settings2, Trash2, Trophy } from "lucide-react"
 import toast from "react-hot-toast"
 import { useMatchStream } from "@/hooks/use-match-stream"
 import { formatStrikeRate, wicketTypeLabel } from "@/lib/cricket-engine/formatters"
+import { readLocal, writeLocal } from "@/lib/local-cache"
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableCaption, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -22,6 +23,8 @@ import { apiJson } from "@/lib/api-client"
 import { useSession } from "@/hooks/use-session"
 import { isSuperadmin } from "@/lib/roles"
 import type { InningsState, MatchState } from "@/lib/cricket-engine/types"
+
+const CACHE_KEY = (matchId: string) => `match:state:${matchId}`
 
 type MatchDetails = {
   id: string
@@ -57,7 +60,7 @@ function toLocalInputValue(value: string | null) {
 export default function MatchPage() {
   const { matchId } = useParams<{ matchId: string }>()
   const router = useRouter()
-  const { state, connected, reconnecting } = useMatchStream(matchId)
+  const { state: streamState, connected, connecting, reconnecting } = useMatchStream(matchId)
   const { session, status } = useSession()
   const sessionLoading = status === "loading"
   const [managing, setManaging] = useState(false)
@@ -65,6 +68,41 @@ export default function MatchPage() {
   const [manageForm, setManageForm] = useState({ venue: "", scheduledAt: "", oversPerInnings: 20, maxOversPerBowler: 4, status: "SCHEDULED" as MatchDetails["status"] })
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [cachedState, setCachedState] = useState<MatchState | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Show cached data instantly, then keep it fresh from the stream + API in the background.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const entry = await readLocal<MatchState>(CACHE_KEY(matchId))
+      if (!cancelled && entry?.data) {
+        setCachedState(entry.data)
+      }
+      setIsLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [matchId])
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const data = await apiJson<MatchState>(`/api/matches/${matchId}/state`, { cache: "no-store" })
+        setCachedState(data)
+        await writeLocal(CACHE_KEY(matchId), data).catch(() => {})
+      } catch {
+        // fall back to whatever cache/stream provides
+      }
+    })()
+  }, [matchId])
+
+  useEffect(() => {
+    if (streamState) setCachedState(streamState)
+  }, [streamState, matchId])
+
+  const state = streamState ?? cachedState
   const innings = state ? currentInnings(state) : null
   const setupPath = `/matches/${matchId}/setup`
   const scorePath = `/matches/${matchId}/score`
@@ -135,12 +173,132 @@ export default function MatchPage() {
   }
 
   if (!state) {
+    if (isLoading) {
+      return (
+        <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
+          {/* Header section */}
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <div className="h-8 w-24 animate-pulse rounded-full bg-muted" />
+              </div>
+              <div className="h-8 w-64 animate-pulse rounded-md bg-muted" />
+              <div className="mt-2 h-4 w-72 animate-pulse rounded-md bg-muted" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="h-11 w-20 animate-pulse rounded-md bg-muted" />
+              <div className="h-11 w-24 animate-pulse rounded-md bg-muted" />
+              <div className="h-11 w-16 animate-pulse rounded-md bg-muted" />
+            </div>
+          </div>
+
+          {/* Scorecard section */}
+          <section className="relative overflow-hidden rounded-2xl border bg-card p-5 shadow-sm sm:p-7">
+            <div className="relative grid items-end gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="min-w-0">
+                <div className="h-4 w-20 animate-pulse rounded-md bg-muted" />
+                <div className="mt-2 h-10 w-48 animate-pulse rounded-md bg-muted" />
+                <div className="mt-4 flex items-baseline gap-2">
+                  <div className="h-20 w-32 animate-pulse rounded-md bg-accent" />
+                  <div className="h-10 w-2 animate-pulse rounded-md bg-muted" />
+                  <div className="h-16 w-24 animate-pulse rounded-md bg-accent" />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+                  <div className="h-5 w-24 animate-pulse rounded-md bg-muted" />
+                  <div className="h-5 w-20 animate-pulse rounded-md bg-muted" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:flex">
+                <div className="min-w-0 rounded-xl border p-3 text-center h-16 animate-pulse rounded-xl bg-muted" />
+                <div className="min-w-0 rounded-xl border p-3 text-center h-16 animate-pulse rounded-xl bg-muted" />
+              </div>
+            </div>
+          </section>
+
+          {/* Innings summary cards */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="h-16 animate-pulse rounded-xl border bg-muted" />
+            <div className="h-16 animate-pulse rounded-xl border bg-muted" />
+          </div>
+
+          {/* Tabs */}
+          <Separator className="my-7" />
+          <div className="h-11 w-48 animate-pulse rounded-md bg-muted" />
+
+          {/* Batting / Bowling cards */}
+          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <Card className="min-w-0 h-80">
+              <CardContent className="px-0 sm:px-2">
+                <div className="h-10 w-24 animate-pulse rounded-md bg-muted" />
+                <div className="divide-y space-y-3 mt-4">
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="h-4 w-32 animate-pulse rounded-md bg-muted" />
+                        <div className="mt-1 h-4 w-20 animate-pulse rounded-md bg-muted" />
+                      </div>
+                      <div className="grid shrink-0 grid-cols-4 gap-x-3 gap-y-1 text-right text-xs">
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="col-span-4 h-4 w-16 animate-pulse rounded-md bg-muted" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="min-w-0 h-80">
+              <CardContent className="px-0 sm:px-2">
+                <div className="h-10 w-24 animate-pulse rounded-md bg-muted" />
+                <div className="divide-y space-y-3 mt-4">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="h-4 w-24 animate-pulse rounded-md bg-muted" />
+                        <div className="mt-1 h-4 w-20 animate-pulse rounded-md bg-muted" />
+                      </div>
+                      <div className="grid shrink-0 grid-cols-4 gap-x-3 gap-y-1 text-right text-xs">
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="h-4 w-8 animate-pulse rounded-md bg-muted" />
+                        <div className="col-span-4 h-4 w-16 animate-pulse rounded-md bg-muted" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Commentary */}
+          <Card className="mt-5 h-64">
+            <CardContent>
+              <div className="h-10 w-24 animate-pulse rounded-md bg-muted" />
+              <div className="flex flex-col divide-y space-y-2 mt-4">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-4 py-3">
+                    <div className="min-w-14 justify-center font-mono h-8 w-14 animate-pulse rounded-md bg-muted" />
+                    <div className="min-w-0">
+                      <div className="h-4 w-40 animate-pulse rounded-md bg-muted" />
+                      <div className="mt-1 h-4 w-32 animate-pulse rounded-md bg-muted" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )
+    }
     return (
       <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
         <Alert>
           <Activity />
-          <AlertTitle>{reconnecting ? "Reconnecting to live score…" : "Loading match centre…"}</AlertTitle>
-          <AlertDescription>The live scorecard will appear as soon as the match feed responds.</AlertDescription>
+          <AlertTitle>No scorecard data</AlertTitle>
+          <AlertDescription>The match feed hasn&apos;t returned any data yet. Check your connection and refresh.</AlertDescription>
         </Alert>
       </div>
     )
@@ -155,7 +313,7 @@ export default function MatchPage() {
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <Badge variant={connected ? "default" : "secondary"}>
               {connected ? <Radio className="size-3 animate-pulse" /> : <Clock3 className="size-3" />}
-              {connected ? "Live" : reconnecting ? "Reconnecting" : "Disconnected"}
+              {connected ? "Live" : connecting || reconnecting || isLoading ? "Connecting…" : "Disconnected"}
             </Badge>
             {state.resultSummary && <Badge variant="outline">{state.resultSummary}</Badge>}
           </div>

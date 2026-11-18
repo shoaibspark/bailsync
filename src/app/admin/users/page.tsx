@@ -1,20 +1,25 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState, useEffect } from "react"
 import toast from "react-hot-toast"
-import { LoaderCircle, Search, ShieldCheck, UsersRound } from "lucide-react"
+import { LoaderCircle, Search, ShieldCheck, UsersRound, Pencil, Save } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import { MultiSelectCombobox } from "@/components/multi-select"
 import { TablePagination } from "@/components/table-pagination"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useSession } from "@/hooks/use-session"
 import { AppRole, isManager, isSuperadmin, ROLES, ROLE_LABELS } from "@/lib/roles"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { CachedSkeleton } from "@/components/cached-skeleton"
 
 type User = {
   id: string
@@ -35,11 +40,26 @@ const roleDetails: Record<AppRole, string> = {
   VIEWER: "Read-only access to public club information",
 }
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState<boolean>(false)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setMobile(window.innerWidth < 768)
+    const mq = window.matchMedia("(max-width: 767px)")
+    const onChange = (e: MediaQueryListEvent) => setMobile(e.matches)
+    mq.addEventListener("change", onChange)
+    return () => mq.removeEventListener("change", onChange)
+  }, [])
+  return mobile
+}
+
 export default function AdminUsersPage() {
   const [updating, setUpdating] = useState("")
+  const [editingUser, setEditingUser] = useState<User | null>(null)
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const isMobile = useIsMobile()
   const { session, status } = useSession()
   const sessionLoading = status === "loading"
   const superadmin = isSuperadmin(session?.role)
@@ -71,20 +91,40 @@ export default function AdminUsersPage() {
   const currentPage = Math.min(page, pageCount)
   const visibleUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
-  const updateUser = async (userId: string, changes: { role?: AppRole; clubIds?: string[] }) => {
-    setUpdating(userId)
+  const openEdit = (user: User) => {
+    setEditingUser(user)
+  }
+
+  const closeEdit = () => {
+    setEditingUser(null)
+  }
+
+  const saveEdit = async () => {
+    if (!editingUser) return
+    setUpdating(editingUser.id)
     try {
       await apiJson<User>("/api/admin/users", {
         method: "PATCH",
-        body: { userId, ...changes },
+        body: { userId: editingUser.id, role: editingUser.role, clubIds: editingUser.clubIds },
       })
       await usersCache.refresh()
       toast.success("User access updated")
+      closeEdit()
     } catch (cause: any) {
       toast.error(cause.message ?? "Unable to update this user")
     } finally {
       setUpdating("")
     }
+  }
+
+  const setRole = (value: string) => {
+    if (!editingUser) return
+    setEditingUser((current) => (current ? { ...current, role: value as AppRole } : null))
+  }
+
+  const setClubIds = (clubIds: string[]) => {
+    if (!editingUser) return
+    setEditingUser((current) => (current ? { ...current, clubIds } : null))
   }
 
   if (status === "unauthenticated" || (status === "authenticated" && !canManage)) {
@@ -99,6 +139,42 @@ export default function AdminUsersPage() {
     )
   }
 
+  const editSurface = (user: User) => (
+    <>
+      <div className="grid gap-4 p-4 sm:p-6">
+        <div className="grid gap-2 text-sm font-medium">
+          <Label htmlFor="edit-user-role">Access role</Label>
+          <Select value={user.role} onValueChange={setRole}>
+            <SelectTrigger id="edit-user-role"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {assignableRoles.map((role) => (
+                  <SelectItem key={role} value={role} disabled={user.id === session?.userId && role !== user.role && !superadmin}>
+                    {ROLE_LABELS[role]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+        {superadmin && (
+          <div className="grid gap-2 text-sm font-medium">
+            <Label htmlFor="edit-user-clubs">Club access</Label>
+            <MultiSelectCombobox
+              id="edit-user-clubs"
+              options={clubOptions}
+              value={user.clubIds}
+              onChange={setClubIds}
+              placeholder="Assign clubs"
+              emptyLabel="No clubs available"
+              disabled={updating === user.id}
+            />
+          </div>
+        )}
+      </div>
+    </>
+  )
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
       <div className="mb-4 sm:mb-6">
@@ -109,7 +185,7 @@ export default function AdminUsersPage() {
         </p>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {ROLES.map((role) => (
           <Card key={role}><CardContent className="p-4"><div className="flex items-center justify-between"><Badge variant={role === "SUPERADMIN" ? "default" : "secondary"}>{role}</Badge><span className="text-2xl font-black">{users.filter((user) => user.role === role).length}</span></div><p className="mt-2 text-xs text-muted-foreground">{roleDetails[role]}</p></CardContent></Card>
         ))}
@@ -139,55 +215,64 @@ export default function AdminUsersPage() {
         </CardHeader>
         <CardContent className="px-0">
           {usersCache.isLoading && !users.length ? (
-            <div className="px-4 pb-6"><div className="h-64 animate-pulse rounded-xl bg-muted" /></div>
+            <CachedSkeleton isLoading={usersCache.isLoading} dataLength={users.length} />
           ) : (
             <>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>User</TableHead><TableHead>Clubs</TableHead><TableHead className="hidden md:table-cell">Joined</TableHead><TableHead className="w-48">Access role</TableHead></TableRow></TableHeader>
-                  <TableBody>{visibleUsers.map((user) => {
-                    const isSelf = user.id === session?.userId
-                    const roleLocked = isSelf && !superadmin
-                    return (
-                      <TableRow key={user.id}>
-                        <TableCell><p className="font-semibold">{user.name || "Unnamed user"}</p><p className="text-xs text-muted-foreground">{user.email}{isSelf ? " · You" : ""}</p></TableCell>
-                        <TableCell>
-                          {superadmin ? (
-                            <div className="w-64 max-w-full">
-                              <MultiSelectCombobox
-                                options={clubOptions}
-                                value={user.clubIds}
-                                onChange={(clubIds) => updateUser(user.id, { clubIds })}
-                                placeholder="Assign clubs"
-                                emptyLabel="No clubs available"
-                                disabled={updating === user.id}
-                              />
-                            </div>
-                          ) : user.clubs.length ? (
-                            <div className="flex flex-wrap gap-1">
-                              {user.clubs.map((club) => <Badge key={club.id} variant="outline">{club.name}</Badge>)}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(user.createdAt))}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={user.role}
-                              onValueChange={(value) => updateUser(user.id, { role: value as AppRole })}
-                              disabled={updating === user.id || roleLocked}
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead>Clubs</TableHead>
+                      <TableHead className="hidden md:table-cell">Joined</TableHead>
+                      <TableHead className="w-48">Access role</TableHead>
+                      <TableHead className="w-24 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleUsers.map((user) => {
+                      const isSelf = user.id === session?.userId
+                      return (
+                        <TableRow key={user.id}>
+                          <TableCell>
+                            <p className="font-semibold">{user.name || "Unnamed user"}</p>
+                            <p className="text-xs text-muted-foreground">{user.email}{isSelf ? " · You" : ""}</p>
+                          </TableCell>
+                          <TableCell>
+                            {user.clubs.length ? (
+                              <div className="flex flex-wrap gap-1">
+                                {user.clubs.map((club) => (
+                                  <Badge key={club.id} variant="outline">{club.name}</Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(user.createdAt))}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={user.role === "SUPERADMIN" ? "default" : "outline"}>
+                              {ROLE_LABELS[user.role]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openEdit(user)}
+                              disabled={updating === user.id}
+                              aria-label={`Edit access for ${user.email}`}
                             >
-                              <SelectTrigger className="w-full" aria-label={`Access role for ${user.email}`}><SelectValue /></SelectTrigger>
-                              <SelectContent><SelectGroup>{assignableRoles.map((role) => <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>)}</SelectGroup></SelectContent>
-                            </Select>
-                            {updating === user.id && <LoaderCircle className="size-4 animate-spin text-muted-foreground" />}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}</TableBody>
+                              {updating === user.id ? <LoaderCircle className="animate-spin size-3" /> : <Pencil className="size-4" />}
+                              <span className="sr-only">Edit {user.email}</span>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
                 </Table>
               </div>
               <TablePagination
@@ -206,6 +291,46 @@ export default function AdminUsersPage() {
           )}
         </CardContent>
       </Card>
+
+      {editingUser && (isMobile ? (
+        <Sheet open>
+          <SheetContent className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Edit {editingUser.name || "user"}</SheetTitle>
+              <SheetDescription>Change the access role and club membership for {editingUser.email}.</SheetDescription>
+            </SheetHeader>
+            {editingUser && editSurface(editingUser)}
+            <SheetFooter>
+              <Button variant="outline" onClick={closeEdit} disabled={updating === editingUser.id}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={updating === editingUser.id}>
+                {updating === editingUser.id ? <LoaderCircle className="animate-spin size-3" /> : <Save className="size-4" />}
+                Save
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <Dialog open modal={true}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit {editingUser.name || "user"}</DialogTitle>
+              <DialogDescription>Change the access role and club membership for {editingUser.email}.</DialogDescription>
+            </DialogHeader>
+            {editingUser && editSurface(editingUser)}
+            <DialogFooter>
+              <Button variant="outline" onClick={closeEdit} disabled={updating === editingUser.id}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={updating === editingUser.id}>
+                {updating === editingUser.id ? <LoaderCircle className="animate-spin size-3" /> : <Save className="size-4" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ))}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import type { MatchState } from "@/lib/cricket-engine/types"
 export type UseMatchStreamResult = {
   state: MatchState | null
   connected: boolean
+  connecting: boolean
   lastUpdated: number | null
   reconnecting: boolean
 }
@@ -14,6 +15,7 @@ export type UseMatchStreamResult = {
 export function useMatchStream(matchId: string): UseMatchStreamResult {
   const [state, setState] = useState<MatchState | null>(null)
   const [connected, setConnected] = useState(false)
+  const [connecting, setConnecting] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [reconnecting, setReconnecting] = useState(false)
 
@@ -23,6 +25,8 @@ export function useMatchStream(matchId: string): UseMatchStreamResult {
   const connectRef = useRef<(() => void) | null>(null)
 
   const connect = useCallback(() => {
+    setConnecting(true)
+    setConnected(false)
     eventSource.current?.close()
     const source = new EventSource(`/api/matches/${matchId}/stream`)
     eventSource.current = source
@@ -40,6 +44,7 @@ export function useMatchStream(matchId: string): UseMatchStreamResult {
 
     source.onopen = () => {
       setConnected(true)
+      setConnecting(false)
       setReconnecting(false)
       reconnectAttempt.current = 0
     }
@@ -48,6 +53,7 @@ export function useMatchStream(matchId: string): UseMatchStreamResult {
     source.addEventListener("state", receive as EventListener)
     source.onerror = () => {
       setConnected(false)
+      setConnecting(false)
       source.close()
       if (reconnectTimeout.current) return
       setReconnecting(true)
@@ -76,5 +82,5 @@ export function useMatchStream(matchId: string): UseMatchStreamResult {
     }
   }, [connect])
 
-  return { state, connected, lastUpdated, reconnecting }
+  return { state, connected, connecting, lastUpdated, reconnecting }
 }

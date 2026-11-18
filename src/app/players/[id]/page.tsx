@@ -12,6 +12,7 @@ import { AnimatedNumber } from "@/components/animated-number"
 import { DateRangePicker, type DateRange } from "@/components/date-range-picker"
 import { Button } from "@/components/ui/button"
 import { useCachedData } from "@/hooks/use-cached-data"
+import { CachedSkeleton } from "@/components/cached-skeleton"
 import { useSession } from "@/hooks/use-session"
 
 type Stats = {
@@ -79,7 +80,7 @@ export default function PlayerPage() {
   const stats = statsCache.data
   const loading = statsCache.isLoading && !stats
 
-  if (loading) return <div className="mx-auto max-w-6xl px-4 py-10"><div className="h-80 animate-pulse rounded-2xl bg-muted" /></div>
+  if (loading) return <CachedSkeleton isLoading={loading} dataLength={0} />
 
   if (!stats) return <div className="mx-auto max-w-3xl px-4 py-10"><Alert variant="destructive"><AlertTitle>Player unavailable</AlertTitle><AlertDescription>{statsCache.error || "Player not found"}</AlertDescription></Alert></div>
 

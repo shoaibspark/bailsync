@@ -466,6 +466,7 @@ export function computeInningsState(
     bowlingXI: [...bowlingXI],
     isSuperOver,
     lastSequenceNumber: events.at(-1)?.sequenceNumber ?? 0,
+    events,
     totalRuns,
     wickets,
     legalBalls,

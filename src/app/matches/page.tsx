@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePagination } from "@/components/table-pagination"
 import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
+import { CachedSkeleton } from "@/components/cached-skeleton"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useLongPressSelect } from "@/hooks/use-long-press-select"
@@ -213,9 +214,7 @@ export default function MatchesPage() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 lg:hidden">
-          {[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="h-48 animate-pulse rounded-xl bg-muted" />)}
-        </div>
+        <CachedSkeleton isLoading={loading} dataLength={visibleMatches.length} />
       ) : visibleMatches.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center py-14 text-center">
