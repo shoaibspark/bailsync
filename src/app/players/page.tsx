@@ -20,7 +20,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DateRangePicker, type DateRange } from "@/components/date-range-picker"
 import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
 import { TablePagination } from "@/components/table-pagination"
-import { CachedSkeleton } from "@/components/cached-skeleton"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useLongPressSelect } from "@/hooks/use-long-press-select"
@@ -354,7 +353,37 @@ export default function PlayersPage() {
       )}
 
       {loading ? (
-        <CachedSkeleton isLoading={loading} dataLength={visiblePlayers.length} />
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:hidden">
+            {[0, 1, 2, 3, 4, 5].map((item) => (
+              <div key={item} className="h-48 animate-pulse rounded-xl bg-muted" />
+            ))}
+          </div>
+          <Card className="hidden overflow-hidden lg:block">
+            <Table className="w-full">
+              <TableHeader>
+                <TableRow>
+                  {[0, 1, 2, 3].map((i) => (
+                    <TableHead key={i} className="h-11">
+                      <div className="h-4 w-24 animate-pulse rounded-md bg-muted" />
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <TableRow key={i}>
+                    {[0, 1, 2, 3].map((j) => (
+                      <TableCell key={j}>
+                        <div className="h-6 w-24 animate-pulse rounded-md bg-muted" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </>
       ) : visiblePlayers.length === 0 ? (
         <Card className="border-dashed"><CardContent className="flex flex-col items-center py-14 text-center"><span className="flex size-12 items-center justify-center rounded-full bg-muted"><UserRound className="text-muted-foreground" /></span><h2 className="mt-4 font-semibold">No players found</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">Add players to club rosters before creating match XIs.</p></CardContent></Card>
       ) : (

@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TablePagination } from "@/components/table-pagination"
 import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
-import { CachedSkeleton } from "@/components/cached-skeleton"
+import { ListSkeleton } from "@/components/list-skeleton"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useLongPressSelect } from "@/hooks/use-long-press-select"
@@ -299,7 +299,7 @@ export default function ClubsPage() {
       </div>
 
       {loading ? (
-        <CachedSkeleton isLoading={loading} dataLength={visibleClubs.length} />
+        <ListSkeleton columns={6} rows={5} />
       ) : clubs.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center py-14 text-center">

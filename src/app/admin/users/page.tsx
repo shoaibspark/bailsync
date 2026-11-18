@@ -19,7 +19,7 @@ import { useSession } from "@/hooks/use-session"
 import { AppRole, isManager, isSuperadmin, ROLES, ROLE_LABELS } from "@/lib/roles"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { CachedSkeleton } from "@/components/cached-skeleton"
+import { ListSkeleton } from "@/components/list-skeleton"
 
 type User = {
   id: string
@@ -215,7 +215,7 @@ export default function AdminUsersPage() {
         </CardHeader>
         <CardContent className="px-0">
           {usersCache.isLoading && !users.length ? (
-            <CachedSkeleton isLoading={usersCache.isLoading} dataLength={users.length} />
+            <ListSkeleton columns={5} rows={5} />
           ) : (
             <>
               <div className="overflow-x-auto">

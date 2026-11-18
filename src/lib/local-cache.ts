@@ -86,11 +86,16 @@ export async function writeLocal<T>(key: string, data: T): Promise<LocalEntry<T>
   }
   try {
     const database = await db
+    // Remove any previously cached entry for this key first, so entries that
+    // were deleted on the remote side do not linger in IndexedDB. Then write
+    // the fresh payload — the entire cached list is replaced wholesale.
     await new Promise<void>((resolve, reject) => {
-      const request = database
-        .transaction(STORE, "readwrite")
-        .objectStore(STORE)
-        .put({ key, ...entry })
+      const del = database.transaction(STORE, "readwrite").objectStore(STORE).delete(key)
+      del.onsuccess = () => resolve()
+      del.onerror = () => reject(del.error)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const request = database.transaction(STORE, "readwrite").objectStore(STORE).put({ key, ...entry })
       request.onsuccess = () => resolve()
       request.onerror = () => reject(request.error)
     })

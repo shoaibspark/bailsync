@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { TablePagination } from "@/components/table-pagination"
 import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
-import { CachedSkeleton } from "@/components/cached-skeleton"
+import { ListSkeleton } from "@/components/list-skeleton"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useLongPressSelect } from "@/hooks/use-long-press-select"
@@ -377,7 +377,7 @@ export default function TournamentsPage() {
       </div>
 
       {loading ? (
-        <CachedSkeleton isLoading={loading} dataLength={visibleTournaments.length} />
+        <ListSkeleton columns={7} rows={5} />
       ) : tournaments.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center py-14 text-center">
