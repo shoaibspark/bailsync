@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import toast from "react-hot-toast"
 import { Building2, LoaderCircle, MapPin, Pencil, Plus, Save, Search, Trash2, UsersRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,7 +12,6 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TablePagination } from "@/components/table-pagination"
@@ -38,7 +38,6 @@ type Club = {
 
 export default function ClubsPage() {
   const [open, setOpen] = useState(false)
-  const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState<Club | null>(null)
   const [editName, setEditName] = useState("")
@@ -52,7 +51,8 @@ export default function ClubsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [selectionMode, setSelectionMode] = useState(false)
-  const { session } = useSession()
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
   const superadmin = isSuperadmin(session?.role)
   const canCreate = superadmin
   const canEditClub = (club: Club) => superadmin || (session?.role === "ADMIN" && session.clubIds.includes(club.id))
@@ -100,7 +100,6 @@ export default function ClubsPage() {
   })
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
-    setError("")
     setSubmitting(true)
     try {
       await apiJson<Club>("/api/clubs", {
@@ -114,8 +113,9 @@ export default function ClubsPage() {
       form.reset()
       setOpen(false)
       await clubsCache.refresh()
+      toast.success("Club created")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to create the club")
+      toast.error(cause.message ?? "Unable to create the club")
     } finally {
       setSubmitting(false)
     }
@@ -131,7 +131,6 @@ export default function ClubsPage() {
   const saveEditing = async () => {
     if (!editing) return
     setSavingEdit(true)
-    setError("")
     try {
       await apiJson<Club>(`/api/clubs/${editing.id}`, {
         method: "PATCH",
@@ -143,8 +142,9 @@ export default function ClubsPage() {
       })
       setEditing(null)
       await clubsCache.refresh()
+      toast.success("Club updated")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to update the club")
+      toast.error(cause.message ?? "Unable to update the club")
     } finally {
       setSavingEdit(false)
     }
@@ -153,14 +153,14 @@ export default function ClubsPage() {
   const deleteClub = async (club: Club) => {
     if (!window.confirm(`Delete ${club.name}? This also removes its players, squads, and match history.`)) return
     setDeletingId(club.id)
-    setError("")
     try {
       await apiJson(`/api/clubs/${club.id}`, { method: "DELETE" })
       setSelected((current) => current.filter((id) => id !== club.id))
       if (editing?.id === club.id) setEditing(null)
       await clubsCache.refresh()
+      toast.success("Club deleted")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the club")
+      toast.error(cause.message ?? "Unable to delete the club")
     } finally {
       setDeletingId("")
     }
@@ -168,17 +168,18 @@ export default function ClubsPage() {
 
   const bulkDelete = async () => {
     if (!selected.length) return
-    if (!window.confirm(`Delete ${selected.length} club${selected.length === 1 ? "" : "s"}? Players, squads, and match history will be removed.`)) return
+    const deleteCount = selected.length
+    if (!window.confirm(`Delete ${deleteCount} club${deleteCount === 1 ? "" : "s"}? Players, squads, and match history will be removed.`)) return
     setBulkDeleting(true)
-    setError("")
     try {
       for (const id of selected) {
         await apiJson(`/api/clubs/${id}`, { method: "DELETE" })
       }
       setSelected([])
       await clubsCache.refresh()
+      toast.success(`${deleteCount} clubs deleted`)
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the selected clubs")
+      toast.error(cause.message ?? "Unable to delete the selected clubs")
     } finally {
       setBulkDeleting(false)
     }
@@ -191,7 +192,12 @@ export default function ClubsPage() {
           <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs">
             <Building2 className="size-4" /> Club directory
           </div>
-          <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Clubs</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Clubs</h1>
+            {status !== "loading" && !superadmin && session?.role !== "ADMIN" && (
+              <Badge variant="outline" className="shrink-0 text-[10px]">View only</Badge>
+            )}
+          </div>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm sm:text-base">Manage the teams taking part in your fixtures and tournaments.</p>
         </div>
         <Button onClick={() => setOpen((current) => !current)} disabled={!canCreate} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
@@ -199,20 +205,6 @@ export default function ClubsPage() {
           {open ? "Close" : "Add club"}
         </Button>
       </div>
-
-      {!canCreate && !loading && (
-        <Alert className="mb-5">
-          <AlertTitle>View-only access</AlertTitle>
-          <AlertDescription>Super admins register clubs. Club admins can edit the clubs they belong to.</AlertDescription>
-        </Alert>
-      )}
-
-      {error && (
-        <Alert variant="destructive" className="mb-5">
-          <AlertTitle>Club action failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       {open && canCreate && (
         <Card className="mb-6 border-primary/20 bg-primary/[0.03]">
@@ -352,12 +344,20 @@ export default function ClubsPage() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions className="gap-0.5">
-                    {canEditClub(club) && (
+                    {sessionLoading ? (
+                      <Button variant="ghost" size="icon-sm" disabled aria-hidden="true">
+                        <Pencil className="opacity-0" />
+                      </Button>
+                    ) : canEditClub(club) && (
                       <Button variant="ghost" size="icon-sm" onClick={() => startEditing(club)} aria-label={`Edit ${club.name}`}>
                         <Pencil />
                       </Button>
                     )}
-                    {canDeleteClub && (
+                    {sessionLoading ? (
+                      <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" disabled aria-hidden="true">
+                        <Trash2 className="opacity-0" />
+                      </Button>
+                    ) : canDeleteClub && (
                       <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => deleteClub(club)} disabled={deletingId === club.id} aria-label={`Delete ${club.name}`}>
                         {deletingId === club.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
                       </Button>
@@ -406,12 +406,20 @@ export default function ClubsPage() {
                     <TableCell className="text-right"><Badge variant="secondary">Active</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {canEditClub(club) && (
+                        {sessionLoading ? (
+                          <Button variant="outline" size="sm" className="invisible" disabled aria-hidden="true">
+                            <Pencil />Edit
+                          </Button>
+                        ) : canEditClub(club) && (
                           <Button variant="outline" size="sm" onClick={() => startEditing(club)} aria-label={`Edit ${club.name}`}>
                             <Pencil />Edit
                           </Button>
                         )}
-                        {canDeleteClub && (
+                        {sessionLoading ? (
+                          <Button variant="destructive" size="sm" className="invisible" disabled aria-hidden="true">
+                            <Trash2 />Delete
+                          </Button>
+                        ) : canDeleteClub && (
                           <Button variant="destructive" size="sm" onClick={() => deleteClub(club)} disabled={deletingId === club.id} aria-label={`Delete ${club.name}`}>
                             {deletingId === club.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
                             Delete

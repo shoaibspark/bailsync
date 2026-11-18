@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { extractToken } from "@/lib/auth"
+import { extractToken, verifySession } from "@/lib/session-token"
 
 const PROTECTED_PAGE_PATTERNS = [
   /^\/clubs\/?$/,
@@ -12,13 +12,14 @@ const PROTECTED_PAGE_PATTERNS = [
   /^\/matches\/[^/]+\/setup\/?$/,
 ]
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl
   const protectedPage = PROTECTED_PAGE_PATTERNS.some((pattern) => pattern.test(pathname))
 
   if (protectedPage) {
     const token = extractToken(req.cookies.get("bailsync_session")?.value)
-    if (!token) {
+    const session = token ? await verifySession(token) : null
+    if (!session) {
       const url = new URL("/login", req.url)
       url.searchParams.set("callbackUrl", `${pathname}${search}`)
       return NextResponse.redirect(url)

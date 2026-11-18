@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import toast from "react-hot-toast"
 import { CalendarDays, LoaderCircle, Pencil, Plus, Save, Search, Trash2, Trophy, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +14,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { TablePagination } from "@/components/table-pagination"
 import { SelectionBar, SelectionCheck } from "@/components/selection-bar"
@@ -56,7 +56,6 @@ const formatLabels = {
 
 export default function TournamentsPage() {
   const [open, setOpen] = useState(false)
-  const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState<Tournament | null>(null)
   const [editValues, setEditValues] = useState({ name: "", format: "LEAGUE" as Tournament["format"], oversPerInnings: 20, maxOversPerBowler: 4, ballsPerOver: 6 })
@@ -68,7 +67,8 @@ export default function TournamentsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [selectionMode, setSelectionMode] = useState(false)
-  const { session } = useSession()
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
   const canManage = isManager(session?.role)
   const canEditTournament = (tournament: Tournament) => isSuperadmin(session?.role) || (session?.role === "ADMIN" && tournament.managerId === session.userId)
   const form = useForm<z.infer<typeof schema>>({
@@ -123,7 +123,6 @@ export default function TournamentsPage() {
   })
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
-    setError("")
     setSubmitting(true)
     try {
       await apiJson<Tournament>("/api/tournaments", {
@@ -133,8 +132,9 @@ export default function TournamentsPage() {
       form.reset()
       setOpen(false)
       await tournamentsCache.refresh()
+      toast.success("Tournament created")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to create the tournament")
+      toast.error(cause.message ?? "Unable to create the tournament")
     } finally {
       setSubmitting(false)
     }
@@ -154,7 +154,6 @@ export default function TournamentsPage() {
   const saveEditing = async () => {
     if (!editing) return
     setSavingEdit(true)
-    setError("")
     try {
       await apiJson<Tournament>(`/api/tournaments/${editing.id}`, {
         method: "PATCH",
@@ -162,8 +161,9 @@ export default function TournamentsPage() {
       })
       setEditing(null)
       await tournamentsCache.refresh()
+      toast.success("Tournament updated")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to update the tournament")
+      toast.error(cause.message ?? "Unable to update the tournament")
     } finally {
       setSavingEdit(false)
     }
@@ -172,14 +172,14 @@ export default function TournamentsPage() {
   const deleteTournament = async (tournament: Tournament) => {
     if (!window.confirm(`Delete ${tournament.name}? Fixtures stay in place but lose their competition.`)) return
     setDeletingId(tournament.id)
-    setError("")
     try {
       await apiJson(`/api/tournaments/${tournament.id}`, { method: "DELETE" })
       setSelected((current) => current.filter((id) => id !== tournament.id))
       if (editing?.id === tournament.id) setEditing(null)
       await tournamentsCache.refresh()
+      toast.success("Tournament deleted")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the tournament")
+      toast.error(cause.message ?? "Unable to delete the tournament")
     } finally {
       setDeletingId("")
     }
@@ -187,17 +187,18 @@ export default function TournamentsPage() {
 
   const bulkDeleteTournaments = async () => {
     if (!selected.length) return
-    if (!window.confirm(`Delete ${selected.length} tournament${selected.length === 1 ? "" : "s"}? Fixtures stay in place but lose their competition.`)) return
+    const deleteCount = selected.length
+    if (!window.confirm(`Delete ${deleteCount} tournament${deleteCount === 1 ? "" : "s"}? Fixtures stay in place but lose their competition.`)) return
     setBulkDeleting(true)
-    setError("")
     try {
       for (const id of selected) {
         await apiJson(`/api/tournaments/${id}`, { method: "DELETE" })
       }
       setSelected([])
       await tournamentsCache.refresh()
+      toast.success(`${deleteCount} tournaments deleted`)
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the selected tournaments")
+      toast.error(cause.message ?? "Unable to delete the selected tournaments")
     } finally {
       setBulkDeleting(false)
     }
@@ -210,7 +211,12 @@ export default function TournamentsPage() {
           <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs">
             <Trophy className="size-4" /> Competition centre
           </div>
-          <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Tournaments</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Tournaments</h1>
+            {status !== "loading" && !canManage && (
+              <Badge variant="outline" className="shrink-0 text-[10px]">View only</Badge>
+            )}
+          </div>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm sm:text-base">Set the format and scoring rules for every fixture in an event.</p>
         </div>
         <Button onClick={() => setOpen((current) => !current)} disabled={!canManage} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
@@ -218,20 +224,6 @@ export default function TournamentsPage() {
           {open ? "Close" : "Create tournament"}
         </Button>
       </div>
-
-      {!canManage && !loading && (
-        <Alert className="mb-5">
-          <AlertTitle>View-only access</AlertTitle>
-          <AlertDescription>Admins and super admins create and edit competitions.</AlertDescription>
-        </Alert>
-      )}
-
-      {error && (
-        <Alert variant="destructive" className="mb-5">
-          <AlertTitle>Tournament action failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       {open && canManage && (
         <Card className="mb-6 border-primary/20 bg-primary/[0.03]">
@@ -429,12 +421,20 @@ export default function TournamentsPage() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions className="gap-0.5">
-                    {canEditTournament(tournament) && (
+                    {sessionLoading ? (
+                      <Button variant="ghost" size="icon-sm" disabled aria-hidden="true">
+                        <Pencil className="opacity-0" />
+                      </Button>
+                    ) : canEditTournament(tournament) && (
                       <Button variant="ghost" size="icon-sm" onClick={() => startEditing(tournament)} aria-label={`Edit ${tournament.name}`}>
                         <Pencil />
                       </Button>
                     )}
-                    {canEditTournament(tournament) && (
+                    {sessionLoading ? (
+                      <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" disabled aria-hidden="true">
+                        <Trash2 className="opacity-0" />
+                      </Button>
+                    ) : canEditTournament(tournament) && (
                       <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => deleteTournament(tournament)} disabled={deletingId === tournament.id} aria-label={`Delete ${tournament.name}`}>
                         {deletingId === tournament.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
                       </Button>
@@ -478,16 +478,24 @@ export default function TournamentsPage() {
                     <TableCell className="text-right">{tournament.lastManStands ? "Yes" : "No"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {canEditTournament(tournament) && (
-                          <>
-                            <Button variant="outline" size="sm" onClick={() => startEditing(tournament)} aria-label={`Edit ${tournament.name}`}>
-                              <Pencil />Edit
-                            </Button>
-                            <Button variant="destructive" size="sm" onClick={() => deleteTournament(tournament)} disabled={deletingId === tournament.id} aria-label={`Delete ${tournament.name}`}>
-                              {deletingId === tournament.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-                              Delete
-                            </Button>
-                          </>
+                        {sessionLoading ? (
+                          <Button variant="outline" size="sm" className="invisible" disabled aria-hidden="true">
+                            <Pencil />Edit
+                          </Button>
+                        ) : canEditTournament(tournament) && (
+                          <Button variant="outline" size="sm" onClick={() => startEditing(tournament)} aria-label={`Edit ${tournament.name}`}>
+                            <Pencil />Edit
+                          </Button>
+                        )}
+                        {sessionLoading ? (
+                          <Button variant="destructive" size="sm" className="invisible" disabled aria-hidden="true">
+                            <Trash2 />Delete
+                          </Button>
+                        ) : canEditTournament(tournament) && (
+                          <Button variant="destructive" size="sm" onClick={() => deleteTournament(tournament)} disabled={deletingId === tournament.id} aria-label={`Delete ${tournament.name}`}>
+                            {deletingId === tournament.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                            Delete
+                          </Button>
                         )}
                       </div>
                     </TableCell>

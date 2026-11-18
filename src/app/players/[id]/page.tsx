@@ -12,6 +12,7 @@ import { AnimatedNumber } from "@/components/animated-number"
 import { DateRangePicker, type DateRange } from "@/components/date-range-picker"
 import { Button } from "@/components/ui/button"
 import { useCachedData } from "@/hooks/use-cached-data"
+import { useSession } from "@/hooks/use-session"
 
 type Stats = {
   name: string
@@ -48,8 +49,10 @@ type Stats = {
 
 export default function PlayerPage() {
   const { id } = useParams<{ id: string }>()
+  const { status } = useSession()
   const [range, setRange] = useState<DateRange>({ from: undefined, to: undefined })
-  const [error, setError] = useState("")
+  const playersPath = "/players"
+  const playersHref = status !== "authenticated" ? `/login?callbackUrl=${encodeURIComponent(playersPath)}` : playersPath
 
   const statsKey = useMemo(() => {
     const params = new URLSearchParams()
@@ -78,7 +81,7 @@ export default function PlayerPage() {
 
   if (loading) return <div className="mx-auto max-w-6xl px-4 py-10"><div className="h-80 animate-pulse rounded-2xl bg-muted" /></div>
 
-  if (!stats) return <div className="mx-auto max-w-3xl px-4 py-10"><Alert variant="destructive"><AlertTitle>Player unavailable</AlertTitle><AlertDescription>{statsCache.error || error || "Player not found"}</AlertDescription></Alert></div>
+  if (!stats) return <div className="mx-auto max-w-3xl px-4 py-10"><Alert variant="destructive"><AlertTitle>Player unavailable</AlertTitle><AlertDescription>{statsCache.error || "Player not found"}</AlertDescription></Alert></div>
 
   const battingRows = [
     ["Matches", stats.batting.matches],
@@ -106,7 +109,7 @@ export default function PlayerPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
-      <ButtonBack />
+      <ButtonBack href={playersHref} />
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <div className="flex size-16 items-center justify-center rounded-2xl bg-primary text-xl font-black text-primary-foreground shadow-sm">{stats.jerseyNumber ?? "—"}</div>
@@ -168,6 +171,6 @@ export default function PlayerPage() {
   )
 }
 
-function ButtonBack() {
-  return <Link href="/players" className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Back to players</Link>
+function ButtonBack({ href }: { href: string }) {
+  return <Link href={href} className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Back to players</Link>
 }

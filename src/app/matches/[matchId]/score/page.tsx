@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { RotateCcw, WifiOff, RefreshCw, Settings2, CircleAlert } from "lucide-react"
+import { RotateCcw, WifiOff, RefreshCw, Settings2 } from "lucide-react"
+import toast from "react-hot-toast"
 import { apiJson, isNetworkError } from "@/lib/api-client"
 import { offlineQueue, flushQueue } from "@/lib/offline-queue"
 import { formatOvers, formatStrikeRate } from "@/lib/cricket-engine/formatters"
@@ -31,8 +32,7 @@ export default function ScoringConsole() {
   const [state, setState] = useState<MatchState | null>(null)
   const [online, setOnline] = useState(typeof navigator !== "undefined" && navigator.onLine)
   const [pending, setPending] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [selectedBowlerId, setSelectedBowlerId] = useState<string>("")
   const [wicketOpen, setWicketOpen] = useState(false)
@@ -66,11 +66,11 @@ export default function ScoringConsole() {
     try {
       const data = await apiJson<MatchState>(`/api/matches/${matchId}/state`, { cache: "no-store" })
       setState(data)
-      setError(null)
+      setLoadError(null)
       sequence.current = (selectedInnings(data)?.lastSequenceNumber ?? 0) + 1
       return data
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to load the match")
+      setLoadError(cause.message ?? "Unable to load the match")
       return null
     }
   }, [matchId])
@@ -120,7 +120,7 @@ export default function ScoringConsole() {
   }) => {
     if (!innings || !inningsId) return
     if (!striker || !nonStriker || !bowler) {
-      setError("Select two batters and a bowler before recording a delivery")
+      toast.error("Select two batters and a bowler before recording a delivery")
       return
     }
 
@@ -142,13 +142,11 @@ export default function ScoringConsole() {
     }
 
     setSubmitting(true)
-    setError(null)
-    setNotice(null)
     try {
       if (!online) {
         await offlineQueue.add(payload)
         await updatePending()
-        setNotice("Delivery saved on this device and queued for sync")
+        toast.success("Delivery saved on this device and queued for sync")
         setAnnouncement("Delivery saved offline and queued for sync")
         return
       }
@@ -158,7 +156,7 @@ export default function ScoringConsole() {
       })
       const updated = await refresh()
       const updatedInnings = updated ? selectedInnings(updated) : null
-      setNotice("Delivery recorded")
+      toast.success("Delivery recorded")
       setAnnouncement(
         updatedInnings
           ? `Delivery recorded. Score ${updatedInnings.totalRuns} for ${updatedInnings.wickets} after ${updatedInnings.overs} overs`
@@ -169,14 +167,14 @@ export default function ScoringConsole() {
         try {
           await offlineQueue.add(payload)
           await updatePending()
-          setNotice("Connection lost. Delivery saved locally for sync")
+          toast.error("Connection lost. Delivery saved locally for sync")
           setAnnouncement("Connection lost. Delivery saved locally for sync")
         } catch {
-          setError("Connection lost and the delivery could not be stored on this device")
+          toast.error("Connection lost and the delivery could not be stored on this device")
         }
         return
       }
-      setError(cause.message ?? "Unable to record this delivery")
+      toast.error(cause.message ?? "Unable to record this delivery")
     } finally {
       setSubmitting(false)
     }
@@ -206,9 +204,9 @@ export default function ScoringConsole() {
     try {
       await apiJson(`/api/matches/${matchId}/innings/${inningsId}/balls/last`, { method: "DELETE" })
       await refresh()
-      setNotice("Last delivery undone")
+      toast.success("Last delivery undone")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to undo the last delivery")
+      toast.error(cause.message ?? "Unable to undo the last delivery")
     } finally {
       setSubmitting(false)
     }
@@ -221,9 +219,13 @@ export default function ScoringConsole() {
       const result = await flushQueue(matchId, inningsId)
       await updatePending()
       await refresh()
-      setNotice(result.failed ? "Some deliveries could not be synced" : `${result.flushed} queued deliveries synced`)
+      if (result.failed) {
+        toast.error("Some deliveries could not be synced")
+      } else {
+        toast.success(`${result.flushed} queued deliveries synced`)
+      }
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to sync queued deliveries")
+      toast.error(cause.message ?? "Unable to sync queued deliveries")
     } finally {
       setSubmitting(false)
     }
@@ -233,8 +235,8 @@ export default function ScoringConsole() {
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-10">
         <Alert>
-          <AlertTitle>{error ? "Match unavailable" : "Loading scoring console…"}</AlertTitle>
-          {error && <AlertDescription>{error}</AlertDescription>}
+          <AlertTitle>{loadError ? "Match unavailable" : "Loading scoring console…"}</AlertTitle>
+          {loadError && <AlertDescription>{loadError}</AlertDescription>}
         </Alert>
       </div>
     )
@@ -293,19 +295,6 @@ export default function ScoringConsole() {
           </Button>
         </div>
       </div>
-
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <CircleAlert />
-          <AlertTitle>Action needed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {notice && (
-        <div role="status" aria-live="polite" className="mb-4 rounded-lg border bg-card px-4 py-3 text-sm font-medium shadow-sm">
-          {notice}
-        </div>
-      )}
 
       <section
         aria-label="Current score"

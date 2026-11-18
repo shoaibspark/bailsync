@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, ArrowRight, Check, LoaderCircle, ShieldCheck, Swords, UsersRound } from "lucide-react"
+import toast from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -87,7 +88,7 @@ export default function MatchSetupPage() {
   const [maxOvers, setMaxOvers] = useState(4)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState("")
+  const [loadError, setLoadError] = useState("")
 
   useEffect(() => {
     let active = true
@@ -108,7 +109,7 @@ export default function MatchSetupPage() {
         setAwayXI(detail.squads.filter((squad) => squad.clubId === detail.awayClub.id && squad.isPlayingXI).map((squad) => squad.playerId))
       })
       .catch((cause: any) => {
-        if (active) setError(cause.message ?? "Unable to load match setup")
+        if (active) setLoadError(cause.message ?? "Unable to load match setup")
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -133,7 +134,6 @@ export default function MatchSetupPage() {
 
   const submit = async () => {
     if (!match) return
-    setError("")
     setSubmitting(true)
     try {
       await apiJson(`/api/matches/${match.id}/setup`, {
@@ -150,7 +150,7 @@ export default function MatchSetupPage() {
       router.push(`/matches/${match.id}/score`)
       router.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to start the match")
+      toast.error(cause.message ?? "Unable to start the match")
     } finally {
       setSubmitting(false)
     }
@@ -163,7 +163,7 @@ export default function MatchSetupPage() {
   if (!match) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10">
-        <Alert variant="destructive"><AlertTitle>Setup unavailable</AlertTitle><AlertDescription>{error || "Match not found"}</AlertDescription></Alert>
+        <Alert variant="destructive"><AlertTitle>Setup unavailable</AlertTitle><AlertDescription>{loadError || "Match not found"}</AlertDescription></Alert>
       </div>
     )
   }
@@ -178,8 +178,6 @@ export default function MatchSetupPage() {
         <h1 className="text-lg font-bold tracking-tight sm:text-3xl sm:text-4xl">{match.homeClub.name} vs {match.awayClub.name}</h1>
         <p className="mt-2 text-muted-foreground">Record the toss, confirm both XIs, and make the first innings ready.</p>
       </div>
-
-      {error && <Alert variant="destructive" className="mb-5"><AlertTitle>Setup could not be saved</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
       <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
         <div className="flex flex-col gap-5 lg:sticky lg:top-24">

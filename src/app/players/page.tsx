@@ -5,14 +5,14 @@ import Link from "next/link"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import toast from "react-hot-toast"
 import { format } from "date-fns"
-import { ArrowRight, LoaderCircle, Pencil, Plus, Save, Search, Shirt, Trash2, UserRound, UsersRound, X } from "lucide-react"
+import { ArrowRight, LoaderCircle, Pencil, Plus, Save, Search, Trash2, UserRound, UsersRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -41,7 +41,6 @@ type RangeStat = { playerId: string; runs: number; balls: number; wickets: numbe
 export default function PlayersPage() {
   const [open, setOpen] = useState(false)
   const [clubFilter, setClubFilter] = useState("ALL")
-  const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState<Player | null>(null)
   const [editValues, setEditValues] = useState({ name: "", jerseyNumber: "", role: "BATTER" })
@@ -55,7 +54,8 @@ export default function PlayersPage() {
   const [range, setRange] = useState<DateRange>({ from: undefined, to: undefined })
   const [selectionMode, setSelectionMode] = useState(false)
   const [rangeStats, setRangeStats] = useState<Record<string, RangeStat>>({})
-  const { session } = useSession()
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
   const canManage = isManager(session?.role)
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -147,7 +147,6 @@ export default function PlayersPage() {
   })
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
-    setError("")
     setSubmitting(true)
     try {
       await apiJson<Player>("/api/players", {
@@ -159,11 +158,12 @@ export default function PlayersPage() {
           role: values.role,
         },
       })
+      toast.success("Player added")
       form.reset()
       setOpen(false)
       await playersCache.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to add the player")
+      toast.error(cause.message ?? "Unable to add the player")
     } finally {
       setSubmitting(false)
     }
@@ -181,7 +181,6 @@ export default function PlayersPage() {
   const saveEditing = async () => {
     if (!editing) return
     setSavingEdit(true)
-    setError("")
     try {
       await apiJson<Player>(`/api/players/${editing.id}`, {
         method: "PATCH",
@@ -191,10 +190,11 @@ export default function PlayersPage() {
           role: editValues.role,
         },
       })
+      toast.success("Player updated")
       setEditing(null)
       await playersCache.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to update the player")
+      toast.error(cause.message ?? "Unable to update the player")
     } finally {
       setSavingEdit(false)
     }
@@ -203,14 +203,14 @@ export default function PlayersPage() {
   const deletePlayer = async (player: Player) => {
     if (!window.confirm(`Delete ${player.name} from ${clubName(player.clubId)}?`)) return
     setDeletingId(player.id)
-    setError("")
     try {
       await apiJson(`/api/players/${player.id}`, { method: "DELETE" })
+      toast.success("Player deleted")
       setSelected((current) => current.filter((id) => id !== player.id))
       if (editing?.id === player.id) setEditing(null)
       await playersCache.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the player")
+      toast.error(cause.message ?? "Unable to delete the player")
     } finally {
       setDeletingId("")
     }
@@ -220,15 +220,15 @@ export default function PlayersPage() {
     if (!selected.length) return
     if (!window.confirm(`Delete ${selected.length} player${selected.length === 1 ? "" : "s"}? Squad entries will also be removed.`)) return
     setBulkDeleting(true)
-    setError("")
     try {
       for (const id of selected) {
         await apiJson(`/api/players/${id}`, { method: "DELETE" })
       }
+      toast.success("Players deleted")
       setSelected([])
       await playersCache.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the selected players")
+      toast.error(cause.message ?? "Unable to delete the selected players")
     } finally {
       setBulkDeleting(false)
     }
@@ -242,23 +242,23 @@ export default function PlayersPage() {
       <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs"><UsersRound className="size-4" /> Player registry</div>
-          <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Players</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Players</h1>
+            {status !== "loading" && !canManage && <Badge variant="outline">View only</Badge>}
+          </div>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm sm:text-base">Manage club rosters, compare form over a date range, and keep player profiles ready for match selection.</p>
         </div>
         <Button onClick={() => setOpen((current) => !current)} disabled={!canManage} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">{open ? <X /> : <Plus />}{open ? "Close" : "Add player"}</Button>
       </div>
-
-      {!canManage && !loading && <Alert className="mb-5"><AlertTitle>View-only access</AlertTitle><AlertDescription>Club admins manage their own roster. Super admins can manage every roster.</AlertDescription></Alert>}
-      {error && <Alert variant="destructive" className="mb-5"><AlertTitle>Player action failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
       {open && canManage && (
         <Card className="mb-6 border-primary/20 bg-primary/[0.03]">
           <CardHeader><CardTitle>Register a player</CardTitle><CardDescription>Add a player to a club roster. Jersey numbers must be unique within that club.</CardDescription></CardHeader>
           <CardContent>
             <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-5 lg:grid-cols-[1fr_1.2fr_0.7fr_1fr_auto] lg:items-end">
-              <div className="flex flex-col gap-2"><Label>Club</Label><Controller control={form.control} name="clubId" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger className="w-full"><SelectValue placeholder="Select club" /></SelectTrigger><SelectContent><SelectGroup>{manageableClubs.map((club) => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}</SelectGroup></SelectContent></Select>} /></div>
-              <div className="flex flex-col gap-2"><Label htmlFor="player-name">Player name</Label><Input id="player-name" placeholder="J. Taylor" {...form.register("name")} /></div>
-              <div className="flex flex-col gap-2"><Label htmlFor="jersey-number">Jersey no.</Label><Input id="jersey-number" type="number" min={0} max={99} {...form.register("jerseyNumber", { valueAsNumber: true })} /></div>
+              <div className="flex flex-col gap-2"><Label>Club</Label><Controller control={form.control} name="clubId" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger className="w-full"><SelectValue placeholder="Select club" /></SelectTrigger><SelectContent><SelectGroup>{manageableClubs.map((club) => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}</SelectGroup></SelectContent></Select>} />{form.formState.errors.clubId && <p className="text-sm text-destructive">{form.formState.errors.clubId.message}</p>}</div>
+              <div className="flex flex-col gap-2"><Label htmlFor="player-name">Player name</Label><Input id="player-name" placeholder="J. Taylor" aria-invalid={Boolean(form.formState.errors.name)} {...form.register("name")} />{form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}</div>
+              <div className="flex flex-col gap-2"><Label htmlFor="jersey-number">Jersey no.</Label><Input id="jersey-number" type="number" min={0} max={99} aria-invalid={Boolean(form.formState.errors.jerseyNumber)} {...form.register("jerseyNumber", { valueAsNumber: true })} />{form.formState.errors.jerseyNumber && <p className="text-sm text-destructive">{form.formState.errors.jerseyNumber.message}</p>}</div>
               <div className="flex flex-col gap-2"><Label>Role</Label><Controller control={form.control} name="role" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="BATTER">Batter</SelectItem><SelectItem value="BOWLER">Bowler</SelectItem><SelectItem value="ALL_ROUNDER">All-rounder</SelectItem><SelectItem value="WICKET_KEEPER">Wicketkeeper</SelectItem></SelectGroup></SelectContent></Select>} /></div>
               <Button type="submit" disabled={submitting}>{submitting && <LoaderCircle className="animate-spin" />}Add player</Button>
             </form>
@@ -403,16 +403,25 @@ export default function PlayersPage() {
                     </ItemContent>
                   </Link>
                   <ItemActions className="gap-0.5">
-                    {canEditPlayer(player) && (
-                      <Button variant="ghost" size="icon-sm" onClick={() => startEditing(player)} aria-label={`Edit ${player.name}`}>
-                        <Pencil />
-                      </Button>
-                    )}
-                    {canEditPlayer(player) && (
-                      <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => deletePlayer(player)} disabled={deletingId === player.id} aria-label={`Delete ${player.name}`}>
-                        {deletingId === player.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-                      </Button>
-                    )}
+                    {sessionLoading ? (
+                      <>
+                        <Button variant="ghost" size="icon-sm" disabled aria-label={`Edit ${player.name}`}>
+                          <Pencil className="opacity-0" />
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" disabled aria-label={`Delete ${player.name}`}>
+                          <Trash2 className="opacity-0" />
+                        </Button>
+                      </>
+                    ) : canEditPlayer(player) ? (
+                      <>
+                        <Button variant="ghost" size="icon-sm" onClick={() => startEditing(player)} aria-label={`Edit ${player.name}`}>
+                          <Pencil />
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => deletePlayer(player)} disabled={deletingId === player.id} aria-label={`Delete ${player.name}`}>
+                          {deletingId === player.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                        </Button>
+                      </>
+                    ) : null}
                   </ItemActions>
                 </Item>
               )
@@ -455,7 +464,18 @@ export default function PlayersPage() {
                     <TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/players/${player.id}`}>View <ArrowRight /></Link></Button></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {canEditPlayer(player) && (
+                        {sessionLoading ? (
+                          <>
+                            <Button variant="outline" size="sm" disabled aria-label={`Edit ${player.name}`}>
+                              <Pencil className="opacity-0" />
+                              <span className="opacity-0">Edit</span>
+                            </Button>
+                            <Button variant="destructive" size="sm" disabled aria-label={`Delete ${player.name}`}>
+                              <Trash2 className="opacity-0" />
+                              <span className="opacity-0">Delete</span>
+                            </Button>
+                          </>
+                        ) : canEditPlayer(player) ? (
                           <>
                             <Button variant="outline" size="sm" onClick={() => startEditing(player)} aria-label={`Edit ${player.name}`}>
                               <Pencil />Edit
@@ -465,7 +485,7 @@ export default function PlayersPage() {
                               Delete
                             </Button>
                           </>
-                        )}
+                        ) : null}
                       </div>
                     </TableCell>
                   </TableRow>

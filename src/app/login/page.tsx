@@ -2,17 +2,18 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import toast from "react-hot-toast"
 import { ArrowRight, LoaderCircle, LockKeyhole, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { apiJson } from "@/lib/api-client"
+import { useAppDispatch } from "@/lib/store"
+import { sessionReceived, writeStoredSession, type SessionUser } from "@/lib/session-slice"
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address"),
@@ -20,8 +21,7 @@ const schema = z.object({
 })
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [error, setError] = useState("")
+  const dispatch = useAppDispatch()
   const [submitting, setSubmitting] = useState(false)
   const [callbackUrl, setCallbackUrl] = useState("/matches")
   const form = useForm<z.infer<typeof schema>>({
@@ -35,15 +35,18 @@ export default function LoginPage() {
   }, [])
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
-    setError("")
     setSubmitting(true)
     try {
       await apiJson("/api/auth/login", { method: "POST", body: values })
-      router.push(callbackUrl)
-      router.refresh()
+      const payload = await apiJson<{ user?: SessionUser | null }>("/api/auth/session")
+      const user = payload?.user ?? null
+      if (user) {
+        dispatch(sessionReceived(user))
+        writeStoredSession(user)
+      }
+      window.location.assign(callbackUrl)
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to sign in")
-    } finally {
+      toast.error(cause.message ?? "Unable to sign in")
       setSubmitting(false)
     }
   }
@@ -81,12 +84,6 @@ export default function LoginPage() {
               <CardDescription>Use your club account to manage teams and score matches.</CardDescription>
             </CardHeader>
             <CardContent className="px-0">
-              {error && (
-                <Alert variant="destructive" className="mb-5">
-                  <AlertTitle>Sign in failed</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
               <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="email">Email address</Label>

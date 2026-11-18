@@ -109,7 +109,7 @@ export default async function HomePage() {
                 <Link href="/matches">Explore matches <ArrowRight data-icon="inline-end" /></Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
-                <Link href="/login">Score a match</Link>
+                <Link href="/login?callbackUrl=%2Fmatches%2Fnew">Score a match</Link>
               </Button>
             </div>
           </div>

@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import toast from "react-hot-toast"
 import { ArrowLeft, ArrowRight, CalendarDays, LoaderCircle, MapPin, Swords } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -40,8 +41,8 @@ export default function NewMatchPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState("")
-  const { session } = useSession()
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
   const canManage = isManager(session?.role)
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -70,7 +71,7 @@ export default function NewMatchPage() {
         if (away) form.setValue("awayClubId", away.id)
       })
       .catch((cause: any) => {
-        if (active) setError(cause.message ?? "Unable to load match options")
+        if (active) toast.error(cause.message ?? "Unable to load match options")
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -81,7 +82,6 @@ export default function NewMatchPage() {
   }, [form, session?.clubIds, session?.role])
 
   const onSubmit = async (values: z.infer<typeof schema>) => {
-    setError("")
     setSubmitting(true)
     try {
       const match = await apiJson<CreatedMatch>("/api/matches", {
@@ -96,10 +96,11 @@ export default function NewMatchPage() {
           maxOversPerBowler: values.maxOversPerBowler,
         },
       })
+      toast.success("Match scheduled")
       router.push(`/matches/${match.id}/setup`)
       router.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to create the match")
+      toast.error(cause.message ?? "Unable to create the match")
     } finally {
       setSubmitting(false)
     }
@@ -110,14 +111,12 @@ export default function NewMatchPage() {
       <Button asChild variant="ghost" size="sm" className="mb-5 -ml-2"><Link href="/matches"><ArrowLeft />Back to matches</Link></Button>
       <div className="mb-7">
         <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs"><Swords className="size-4" /> New fixture</div>
-        <h1 className="text-lg font-bold tracking-tight sm:text-3xl sm:text-4xl">Create a match</h1>
+        <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight sm:text-3xl sm:text-4xl">
+          Create a match
+          {!sessionLoading && !canManage && <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] sm:text-xs">View only</Badge>}
+        </h1>
         <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">Choose the teams and basic rules. You’ll confirm the toss and XIs in the next step.</p>
       </div>
-
-      {!canManage && !loading && (
-        <Alert className="mb-5"><AlertTitle>View-only access</AlertTitle><AlertDescription>Club admins and super admins schedule fixtures.</AlertDescription></Alert>
-      )}
-      {error && <Alert variant="destructive" className="mb-5"><AlertTitle>Match could not be created</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
       <Card>
         <CardHeader><CardTitle>Fixture details</CardTitle><CardDescription>Both clubs need at least 11 registered players before scoring can begin.</CardDescription></CardHeader>

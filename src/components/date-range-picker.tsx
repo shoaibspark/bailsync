@@ -21,9 +21,9 @@ export type DateRange = {
 }
 
 const presets = [
-  { label: "7 days", days: 7 },
-  { label: "30 days", days: 30 },
-  { label: "12 months", days: 365 },
+  { label: "Last 7 days", days: 7 },
+  { label: "Last 30 days", days: 30 },
+  { label: "Last 12 months", days: 365 },
 ]
 
 function useIsDesktop() {
@@ -185,7 +185,7 @@ export function DateRangePicker({
                 className="h-8 rounded-full px-3 text-xs"
                 onClick={() => applyPreset(preset.days)}
               >
-                Last {preset.label}
+                {preset.label}
               </Button>
             ))}
           </div>

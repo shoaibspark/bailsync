@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { Activity, ArrowRight, Clock3, LoaderCircle, Pencil, Radio, Save, Settings2, Trash2, Trophy } from "lucide-react"
+import toast from "react-hot-toast"
 import { useMatchStream } from "@/hooks/use-match-stream"
 import { formatStrikeRate, wicketTypeLabel } from "@/lib/cricket-engine/formatters"
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card"
@@ -57,15 +58,18 @@ export default function MatchPage() {
   const { matchId } = useParams<{ matchId: string }>()
   const router = useRouter()
   const { state, connected, reconnecting } = useMatchStream(matchId)
-  const { session } = useSession()
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
   const [managing, setManaging] = useState(false)
   const [matchDetails, setMatchDetails] = useState<MatchDetails | null>(null)
   const [manageForm, setManageForm] = useState({ venue: "", scheduledAt: "", oversPerInnings: 20, maxOversPerBowler: 4, status: "SCHEDULED" as MatchDetails["status"] })
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [manageError, setManageError] = useState("")
-  const [manageNotice, setManageNotice] = useState("")
   const innings = state ? currentInnings(state) : null
+  const setupPath = `/matches/${matchId}/setup`
+  const scorePath = `/matches/${matchId}/score`
+  const setupHref = status !== "authenticated" ? `/login?callbackUrl=${encodeURIComponent(setupPath)}` : setupPath
+  const scoreHref = status !== "authenticated" ? `/login?callbackUrl=${encodeURIComponent(scorePath)}` : scorePath
 
   const canManageMatch = Boolean(
     state && session && (
@@ -78,8 +82,6 @@ export default function MatchPage() {
   )
 
   const openManage = useCallback(async () => {
-    setManageError("")
-    setManageNotice("")
     setManaging(true)
     try {
       const details = await apiJson<MatchDetails>(`/api/matches/${matchId}`)
@@ -92,14 +94,13 @@ export default function MatchPage() {
         status: details.status,
       })
     } catch (cause: any) {
-      setManageError(cause.message ?? "Unable to load match details")
+      toast.error(cause.message ?? "Unable to load match details")
+      setManaging(false)
     }
   }, [matchId])
 
   const saveMatch = async () => {
     setSaving(true)
-    setManageError("")
-    setManageNotice("")
     try {
       await apiJson(`/api/matches/${matchId}`, {
         method: "PATCH",
@@ -111,10 +112,10 @@ export default function MatchPage() {
           status: manageForm.status,
         },
       })
-      setManageNotice("Match details updated")
+      toast.success("Match details updated")
       router.refresh()
     } catch (cause: any) {
-      setManageError(cause.message ?? "Unable to update the match")
+      toast.error(cause.message ?? "Unable to update the match")
     } finally {
       setSaving(false)
     }
@@ -123,13 +124,12 @@ export default function MatchPage() {
   const deleteMatch = async () => {
     if (!window.confirm("Delete this match? The fixture and every recorded delivery will be removed.")) return
     setDeleting(true)
-    setManageError("")
     try {
       await apiJson(`/api/matches/${matchId}`, { method: "DELETE" })
       router.push("/matches")
       router.refresh()
     } catch (cause: any) {
-      setManageError(cause.message ?? "Unable to delete the match")
+      toast.error(cause.message ?? "Unable to delete the match")
       setDeleting(false)
     }
   }
@@ -167,9 +167,14 @@ export default function MatchPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm" className="h-11 sm:h-8"><Link href={`/matches/${matchId}/setup`}><Settings2 />Setup</Link></Button>
-          <Button asChild size="sm" className="h-11 sm:h-8"><Link href={`/matches/${matchId}/score`}>Scoring console<ArrowRight /></Link></Button>
-          {canManageMatch && (
+          <Button asChild variant="outline" size="sm" className="h-11 sm:h-8"><Link href={setupHref}><Settings2 />Setup</Link></Button>
+          <Button asChild size="sm" className="h-11 sm:h-8"><Link href={scoreHref}>Scoring console<ArrowRight /></Link></Button>
+          {sessionLoading ? (
+            <Button variant="ghost" size="sm" className="h-11 sm:h-8" disabled aria-label="Manage">
+              <Pencil className="opacity-0" />
+              <span className="opacity-0">Manage</span>
+            </Button>
+          ) : canManageMatch && (
             <Button variant="ghost" size="sm" className="h-11 sm:h-8" onClick={openManage} disabled={managing}>
               {managing ? <LoaderCircle className="animate-spin" /> : <Pencil />}
               Manage
@@ -177,18 +182,6 @@ export default function MatchPage() {
           )}
         </div>
       </div>
-
-      {canManageMatch && manageError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Match action failed</AlertTitle>
-          <AlertDescription>{manageError}</AlertDescription>
-        </Alert>
-      )}
-      {canManageMatch && manageNotice && (
-        <Alert className="mb-4">
-          <AlertTitle>{manageNotice}</AlertTitle>
-        </Alert>
-      )}
 
       {canManageMatch && managing && matchDetails && (
         <Card className="mb-6 border-primary/30 bg-primary/[0.03]">
@@ -251,7 +244,7 @@ export default function MatchPage() {
             <span className="flex size-12 items-center justify-center rounded-full bg-muted"><Trophy className="text-muted-foreground" /></span>
             <h2 className="mt-4 font-semibold">The scorecard is ready for setup</h2>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">Record the toss, confirm both XIs, and start the first innings to begin scoring.</p>
-            <Button asChild className="mt-4"><Link href={`/matches/${matchId}/setup`}>Set up match</Link></Button>
+            <Button asChild className="mt-4"><Link href={setupHref}>Set up match</Link></Button>
           </CardContent>
         </Card>
       ) : (

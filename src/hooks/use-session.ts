@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo } from "react"
+import { useAppSelector } from "@/lib/store"
+import type { SessionStatus, SessionUser } from "@/lib/session-slice"
 import { AppRole } from "@/lib/roles"
 
 export type Session = {
@@ -10,44 +12,34 @@ export type Session = {
   clubIds: string[]
 }
 
-type SessionResponse = {
-  user: {
-    id: string
-    name: string | null
-    email: string
-    role: AppRole
-    clubIds: string[]
-  } | null
-}
+export function useSession(): {
+  session: Session | null
+  user: SessionUser | null
+  status: SessionStatus
+  loading: boolean
+  authenticated: boolean
+} {
+  const user = useAppSelector((state) => state.session.user)
+  const status = useAppSelector((state) => state.session.status)
 
-export function useSession(): { session: Session | null; loading: boolean } {
-  const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
+  const session = useMemo<Session | null>(
+    () =>
+      user
+        ? {
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+            clubIds: user.clubIds,
+          }
+        : null,
+    [user],
+  )
 
-  useEffect(() => {
-    let cancelled = false
-    fetch("/api/auth/session", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return null
-        return response.json() as Promise<SessionResponse>
-      })
-      .then((payload) => {
-        if (cancelled || !payload?.user) return
-        setSession({
-          userId: payload.user.id,
-          email: payload.user.email,
-          role: payload.user.role,
-          clubIds: payload.user.clubIds ?? [],
-        })
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return { session, loading }
+  return {
+    session,
+    user,
+    status,
+    loading: status === "loading",
+    authenticated: status === "authenticated",
+  }
 }

@@ -7,13 +7,11 @@
 // NEVER cached: SSE stream, mutating requests (POST/PATCH/DELETE), auth routes,
 // responses with Set-Cookie/Authorization.
 
-const CACHE_NAME = "bailsync-v2"
+const CACHE_NAME = "bailsync-v3"
 const SHELL_URLS = [
   "/",
   "/login",
   "/register",
-  "/clubs",
-  "/tournaments",
   "/offline",
   "/manifest.webmanifest",
   "/favicon.png",
@@ -24,6 +22,20 @@ const SHELL_URLS = [
   "/icons/apple-touch-icon.png",
 ]
 const API_CACHE_NAME = "bailsync-api-v1"
+
+// Pages that require an authenticated session are never precached or cached,
+// otherwise a signed-out redirect could be stored under a protected route key.
+const PROTECTED_PATHS = [
+  "/clubs",
+  "/tournaments",
+  "/players",
+  "/admin",
+  "/matches/new",
+]
+const isProtectedPath = (pathname) =>
+  PROTECTED_PATHS.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  )
 
 const isMutating = (method) =>
   ["POST", "PATCH", "PUT", "DELETE"].includes(method)
@@ -94,11 +106,27 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Pages / navigations: NetworkFirst -> cache -> offline fallback
+  const pathname = new URL(url).pathname
+  if (isProtectedPath(pathname)) {
+    event.respondWith(
+      fetch(request).catch(() => caches.match("/offline")),
+    )
+    return
+  }
+
   event.respondWith(
-    fetch(request).catch(() =>
-      caches.match(request).then((cached) =>
-        cached || caches.match("/offline"),
+    fetch(request)
+      .then((resp) => {
+        if (resp.ok && resp.status === 200 && !resp.redirected) {
+          const copy = resp.clone()
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+        }
+        return resp
+      })
+      .catch(() =>
+        caches.match(request).then((cached) =>
+          cached || caches.match("/offline"),
+        ),
       ),
-    ),
   )
 })

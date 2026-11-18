@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, CloudUpload, LoaderCircle, WifiOff } from "lucide-react"
+import toast from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -12,7 +13,6 @@ import { flushAllQueue, offlineQueue } from "@/lib/offline-queue"
 export default function OfflinePage() {
   const [pending, setPending] = useState(0)
   const [syncing, setSyncing] = useState(false)
-  const [message, setMessage] = useState("")
 
   useEffect(() => {
     offlineQueue.count().then(setPending)
@@ -20,14 +20,14 @@ export default function OfflinePage() {
 
   const retry = async () => {
     setSyncing(true)
-    setMessage("")
     try {
       const result = await flushAllQueue()
       const count = await offlineQueue.count()
       setPending(count)
-      setMessage(result.flushed ? `${result.flushed} queued deliveries synced` : "No queued deliveries could be synced yet")
+      if (result.flushed) toast.success(`${result.flushed} queued deliveries synced`)
+      else toast.error("No queued deliveries could be synced yet")
     } catch {
-      setMessage("Still offline. Your deliveries remain safely stored on this device.")
+      toast.error("Still offline. Your deliveries remain safely stored on this device.")
     } finally {
       setSyncing(false)
     }
@@ -48,7 +48,6 @@ export default function OfflinePage() {
             <Alert className="mb-5"><AlertTitle>Everything is synced</AlertTitle><AlertDescription>There are no pending deliveries on this device.</AlertDescription></Alert>
           )}
           {pending > 0 && <Progress value={0} className="mb-5" aria-label="Pending deliveries have not synced" />}
-          {message && <p className="mb-5 text-center text-sm text-muted-foreground">{message}</p>}
           <Button onClick={retry} className="w-full" disabled={syncing}>
             {syncing ? <LoaderCircle className="animate-spin" /> : <CloudUpload />}
             {syncing ? "Trying to sync…" : "Retry connection"}

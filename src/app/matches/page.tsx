@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import toast from "react-hot-toast"
 import { CalendarDays, LoaderCircle, MapPin, Plus, Radio, Search, Trash2, Trophy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Item, ItemActions } from "@/components/ui/item"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -44,7 +44,6 @@ function statusVariant(status: Match["status"]) {
 
 export default function MatchesPage() {
   const router = useRouter()
-  const [error, setError] = useState("")
   const [filter, setFilter] = useState<(typeof filters)[number]>("ALL")
   const [deletingId, setDeletingId] = useState("")
   const [selected, setSelected] = useState<string[]>([])
@@ -53,8 +52,9 @@ export default function MatchesPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [selectionMode, setSelectionMode] = useState(false)
-  const { session } = useSession()
-  const canCreate = isManager(session?.role)
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
+  const canManage = isManager(session?.role)
 
   const matchesCache = useCachedData<Match[]>("matches:list", () => apiJson<Match[]>("/api/matches"))
   const matches = matchesCache.data ?? []
@@ -111,14 +111,14 @@ export default function MatchesPage() {
     const label = `${match.homeClub?.name ?? "Home"} vs ${match.awayClub?.name ?? "Away"}`
     if (!window.confirm(`Delete ${label}? This removes the fixture and its recorded deliveries.`)) return
     setDeletingId(match.id)
-    setError("")
     try {
       await apiJson(`/api/matches/${match.id}`, { method: "DELETE" })
+      toast.success("Match deleted")
       setSelected((current) => current.filter((id) => id !== match.id))
       await matchesCache.refresh()
       router.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the match")
+      toast.error(cause.message ?? "Unable to delete the match")
     } finally {
       setDeletingId("")
     }
@@ -126,18 +126,19 @@ export default function MatchesPage() {
 
   const bulkDelete = async () => {
     if (!selected.length) return
-    if (!window.confirm(`Delete ${selected.length} fixture${selected.length === 1 ? "" : "s"}? Recorded deliveries are removed too.`)) return
+    const count = selected.length
+    if (!window.confirm(`Delete ${count} fixture${count === 1 ? "" : "s"}? Recorded deliveries are removed too.`)) return
     setBulkDeleting(true)
-    setError("")
     try {
       for (const id of selected) {
         await apiJson(`/api/matches/${id}`, { method: "DELETE" })
       }
+      toast.success(`${count} matches deleted`)
       setSelected([])
       await matchesCache.refresh()
       router.refresh()
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to delete the selected matches")
+      toast.error(cause.message ?? "Unable to delete the selected matches")
     } finally {
       setBulkDeleting(false)
     }
@@ -150,27 +151,22 @@ export default function MatchesPage() {
           <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary sm:text-xs">
             <Trophy className="size-4" /> Match centre
           </div>
-          <h1 className="text-lg font-bold tracking-tight sm:text-3xl">Matches</h1>
+          <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight sm:text-3xl">
+            Matches
+            {!sessionLoading && !canManage && <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] sm:text-xs">View only</Badge>}
+          </h1>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm sm:text-base">Follow every fixture from toss to result, or start a new match.</p>
         </div>
-        <Button asChild disabled={!canCreate} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
-          <Link href="/matches/new"><Plus />New match</Link>
-        </Button>
+        {sessionLoading || !canManage ? (
+          <Button disabled aria-hidden={sessionLoading || undefined} className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
+            <Plus className={cn(sessionLoading && "opacity-0")} />New match
+          </Button>
+        ) : (
+          <Button asChild className="h-8 w-full text-xs sm:h-9 sm:w-auto sm:text-sm">
+            <Link href="/matches/new"><Plus />New match</Link>
+          </Button>
+        )}
       </div>
-
-      {!canCreate && !loading && (
-        <Alert className="mb-5">
-          <AlertTitle>View-only access</AlertTitle>
-          <AlertDescription>Club admins and super admins schedule fixtures.</AlertDescription>
-        </Alert>
-      )}
-
-      {error && (
-        <Alert variant="destructive" className="mb-5">
-          <AlertTitle>Matches unavailable</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0" role="tablist" aria-label="Filter matches">
@@ -226,7 +222,7 @@ export default function MatchesPage() {
             <span className="flex size-12 items-center justify-center rounded-full bg-muted"><Radio className="text-muted-foreground" /></span>
             <h2 className="mt-4 font-semibold">No matches in this view</h2>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">Try another filter or create the next fixture for your club.</p>
-            {canCreate && <Button asChild size="sm" className="mt-4"><Link href="/matches/new"><Plus />Create match</Link></Button>}
+            {canManage && <Button asChild size="sm" className="mt-4"><Link href="/matches/new"><Plus />Create match</Link></Button>}
           </CardContent>
         </Card>
       ) : (
@@ -278,7 +274,14 @@ export default function MatchesPage() {
                     </div>
                     {match.resultSummary && <p className="mt-1 text-xs font-semibold text-foreground">{match.resultSummary}</p>}
                   </Link>
-                  {canDeleteMatch(match) && (
+                  {sessionLoading ? (
+                    <ItemActions className="justify-end">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" disabled aria-hidden="true">
+                        <Trash2 className="opacity-0" />
+                        <span className="invisible">Delete</span>
+                      </Button>
+                    </ItemActions>
+                  ) : canDeleteMatch(match) && (
                     <ItemActions className="justify-end">
                       <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => deleteMatch(match)} disabled={deletingId === match.id} aria-label={`Delete ${match.homeClub?.name ?? "match"} versus ${match.awayClub?.name ?? "match"}`}>
                         {deletingId === match.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
@@ -325,7 +328,12 @@ export default function MatchesPage() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button asChild variant="ghost" size="sm"><Link href={`/matches/${match.id}`}>Open</Link></Button>
-                        {canDeleteMatch(match) && (
+                        {sessionLoading ? (
+                          <Button variant="destructive" size="sm" disabled aria-hidden="true">
+                            <Trash2 className="opacity-0" />
+                            <span className="invisible">Delete</span>
+                          </Button>
+                        ) : canDeleteMatch(match) && (
                           <Button variant="destructive" size="sm" onClick={() => deleteMatch(match)} disabled={deletingId === match.id} aria-label={`Delete ${match.homeClub?.name ?? "match"} versus ${match.awayClub?.name ?? "match"}`}>
                             {deletingId === match.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
                             Delete

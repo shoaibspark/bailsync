@@ -110,12 +110,6 @@ export default function manifest(): MetadataRoute.Manifest {
         url: "/matches?source=pwa-shortcut",
         icons: [{ src: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" }],
       },
-      {
-        name: "Tournaments",
-        short_name: "Tournaments",
-        url: "/tournaments?source=pwa-shortcut",
-        icons: [{ src: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" }],
-      },
     ],
   }
 }

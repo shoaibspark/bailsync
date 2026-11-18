@@ -13,6 +13,7 @@ import {
   Trophy,
   UserRound,
   UsersRound,
+  type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -27,34 +28,36 @@ import {
 } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
-import { AppRole, isManager } from "@/lib/roles"
+import { isManager } from "@/lib/roles"
+import { useAppDispatch, useAppSelector } from "@/lib/store"
+import { sessionCleared, writeStoredSession } from "@/lib/session-slice"
 
-type SessionUser = {
-  id: string
-  name: string | null
-  email: string
-  role: AppRole
-  clubIds: string[]
+type NavItem = {
+  href: string
+  label: string
+  icon: LucideIcon
+  requiresAuth?: boolean
+  managerOnly?: boolean
 }
 
-const navigation = [
+const navigation: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/matches", label: "Matches", icon: Trophy },
-  { href: "/clubs", label: "Clubs", icon: UsersRound },
-  { href: "/tournaments", label: "Tournaments", icon: CalendarDays },
-  { href: "/players", label: "Players", icon: UserRound },
+  { href: "/clubs", label: "Clubs", icon: UsersRound, requiresAuth: true },
+  { href: "/tournaments", label: "Tournaments", icon: CalendarDays, requiresAuth: true },
+  { href: "/players", label: "Players", icon: UserRound, requiresAuth: true },
 ]
 
-const adminNavigation = [
-  { href: "/admin/users", label: "Access", icon: ShieldCheck },
+const adminNavigation: NavItem[] = [
+  { href: "/admin/users", label: "Access", icon: ShieldCheck, requiresAuth: true, managerOnly: true },
 ]
 
-const bottomNavigation = [
+const bottomNavigation: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/matches", label: "Matches", icon: Trophy },
-  { href: "/tournaments", label: "Series", icon: CalendarDays },
-  { href: "/clubs", label: "Clubs", icon: UsersRound },
-  { href: "/players", label: "Players", icon: UserRound },
+  { href: "/tournaments", label: "Series", icon: CalendarDays, requiresAuth: true },
+  { href: "/clubs", label: "Clubs", icon: UsersRound, requiresAuth: true },
+  { href: "/players", label: "Players", icon: UserRound, requiresAuth: true },
 ]
 
 function isActive(pathname: string, href: string) {
@@ -81,10 +84,25 @@ function BrandMark({ className }: { className?: string }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const [user, setUser] = useState<SessionUser | null>(null)
+  const dispatch = useAppDispatch()
+  const user = useAppSelector((state) => state.session.user)
+  const status = useAppSelector((state) => state.session.status)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const overlay = pathname.includes("/overlay")
-  const visibleNavigation = isManager(user?.role) ? [...navigation, ...adminNavigation] : navigation
+  const authenticated = status === "authenticated"
+  const loading = status === "loading"
+
+  const canSee = (item: NavItem) => {
+    if (item.requiresAuth && !authenticated) return false
+    if (item.managerOnly && !isManager(user?.role)) return false
+    return true
+  }
+
+  const visibleNavigation = [
+    ...navigation,
+    ...(isManager(user?.role) ? adminNavigation : []),
+  ].filter(canSee)
+  const visibleBottomNavigation = bottomNavigation.filter(canSee)
 
   useEffect(() => {
     document.documentElement.dataset.overlay = overlay ? "true" : "false"
@@ -94,30 +112,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [overlay])
 
   useEffect(() => {
-    let active = true
-    fetch("/api/auth/session", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return null
-        return response.json()
-      })
-      .then((payload: { user?: SessionUser | null } | null) => {
-        if (active) setUser(payload?.user ?? null)
-      })
-      .catch(() => {
-        if (active) setUser(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [pathname])
-
-  useEffect(() => {
     setDrawerOpen(false)
   }, [pathname])
 
   const signOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
-    setUser(null)
+    dispatch(sessionCleared())
+    writeStoredSession(null)
     window.location.href = "/"
   }
 
@@ -151,7 +152,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   Bailsync
                 </SheetTitle>
                 <SheetDescription className="text-xs">
-                  {user ? `Signed in as ${user.name || user.email}` : "Browse the workspace"}
+                  {loading
+                    ? "Checking your session…"
+                    : user
+                      ? `Signed in as ${user.name || user.email}`
+                      : "Browse the workspace"}
                 </SheetDescription>
               </SheetHeader>
               <nav className="flex flex-col gap-1 overflow-y-auto p-3" aria-label="All sections">
@@ -162,6 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={item.requiresAuth ? false : undefined}
                       aria-current={active ? "page" : undefined}
                       className={cn(
                         "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -215,6 +221,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={item.requiresAuth ? false : undefined}
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -229,13 +236,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <ThemeToggle />
-            {user ? (
+            {loading ? (
+              <div className="h-8 w-16 animate-pulse rounded-lg bg-muted" aria-hidden="true" />
+            ) : user ? (
               <>
                 <div className="hidden items-center gap-2 rounded-lg border px-3 py-1.5 sm:flex">
-                  <div className="text-right">
-                    <p className="max-w-32 truncate text-xs font-semibold">{user.name || user.email}</p>
-                    <p className="text-[11px] text-muted-foreground">{user.role}</p>
-                  </div>
+                  <p className="max-w-32 truncate text-xs font-semibold">{user.name || user.email}</p>
                   <Badge variant="secondary" className="text-[10px]">{user.role}</Badge>
                 </div>
                 <Button
@@ -265,18 +271,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl lg:hidden"
         aria-label="Primary sections"
       >
-        <div className="mx-auto grid max-w-lg grid-cols-5">
-          {bottomNavigation.map((item) => {
+        <div
+          className="mx-auto grid max-w-lg gap-0"
+          style={{ gridTemplateColumns: `repeat(${Math.max(visibleBottomNavigation.length, 1)}, minmax(0, 1fr))` }}
+        >
+          {visibleBottomNavigation.map((item) => {
             const active = isActive(pathname, item.href)
             const Icon = item.icon
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={item.requiresAuth ? false : undefined}
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-medium transition-colors sm:min-h-12 sm:gap-1 sm:text-[11px]",
-                  active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                  active ? "text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon className={cn("size-4 sm:size-5", active && "stroke-[2.5]")} />

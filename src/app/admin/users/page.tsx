@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import toast from "react-hot-toast"
 import { LoaderCircle, Search, ShieldCheck, UsersRound } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -13,7 +14,7 @@ import { TablePagination } from "@/components/table-pagination"
 import { apiJson } from "@/lib/api-client"
 import { useCachedData } from "@/hooks/use-cached-data"
 import { useSession } from "@/hooks/use-session"
-import { AppRole, isSuperadmin, ROLES, ROLE_LABELS } from "@/lib/roles"
+import { AppRole, isManager, isSuperadmin, ROLES, ROLE_LABELS } from "@/lib/roles"
 
 type User = {
   id: string
@@ -36,12 +37,13 @@ const roleDetails: Record<AppRole, string> = {
 
 export default function AdminUsersPage() {
   const [updating, setUpdating] = useState("")
-  const [error, setError] = useState("")
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const { session, loading: sessionLoading } = useSession()
+  const { session, status } = useSession()
+  const sessionLoading = status === "loading"
   const superadmin = isSuperadmin(session?.role)
+  const canManage = isManager(session?.role)
   const assignableRoles: AppRole[] = superadmin ? [...ROLES] : ["SCORER", "VIEWER"]
 
   const usersCache = useCachedData<User[]>("users:admin", () => apiJson<User[]>("/api/admin/users"), {
@@ -71,21 +73,21 @@ export default function AdminUsersPage() {
 
   const updateUser = async (userId: string, changes: { role?: AppRole; clubIds?: string[] }) => {
     setUpdating(userId)
-    setError("")
     try {
-      const updated = await apiJson<User>("/api/admin/users", {
+      await apiJson<User>("/api/admin/users", {
         method: "PATCH",
         body: { userId, ...changes },
       })
       await usersCache.refresh()
+      toast.success("User access updated")
     } catch (cause: any) {
-      setError(cause.message ?? "Unable to update this user")
+      toast.error(cause.message ?? "Unable to update this user")
     } finally {
       setUpdating("")
     }
   }
 
-  if (!sessionLoading && session && !superadmin && session.role !== "ADMIN") {
+  if (status === "unauthenticated" || (status === "authenticated" && !canManage)) {
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
         <Alert variant="destructive">
@@ -106,8 +108,6 @@ export default function AdminUsersPage() {
           Super admins control the whole workspace. Club admins manage the clubs they belong to and can only assign scorer or viewer access.
         </p>
       </div>
-
-      {error && <Alert variant="destructive" className="mb-5"><AlertTitle>User action failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {ROLES.map((role) => (
