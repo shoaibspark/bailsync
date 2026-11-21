@@ -4,16 +4,12 @@ import * as React from "react"
 import { ChevronsUpDownIcon } from "lucide-react"
 import {
   Combobox,
-  ComboboxChip,
-  ComboboxChips,
   ComboboxChipsInput,
   ComboboxContent,
   ComboboxEmpty,
   ComboboxItem,
   ComboboxList,
   ComboboxTrigger,
-  ComboboxValue,
-  useComboboxAnchor,
 } from "@/components/ui/combobox"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -42,7 +38,6 @@ export function MultiSelectCombobox({
   className?: string
   id?: string
 }) {
-  const anchor = useComboboxAnchor()
   const items = React.useMemo(() => options.map((option) => option.value), [options])
   const labelFor = React.useCallback(
     (item: string) => options.find((option) => option.value === item)?.label ?? item,
@@ -58,19 +53,17 @@ export function MultiSelectCombobox({
       onValueChange={(next) => onChange(next as string[])}
       disabled={disabled}
     >
-      <ComboboxChips ref={anchor} className={cn("w-full", className)}>
-        <ComboboxValue>
-          {(selected: string[]) => (
-            <React.Fragment>
-              {selected.map((item) => (
-                <ComboboxChip key={item}>{labelFor(item)}</ComboboxChip>
-              ))}
-              <ComboboxChipsInput id={id} placeholder={selected.length ? "" : placeholder} />
-            </React.Fragment>
-          )}
-        </ComboboxValue>
-      </ComboboxChips>
-      <ComboboxContent anchor={anchor} className="w-[var(--anchor-width)]">
+      <ComboboxTrigger>
+        <div className="flex flex-wrap items-center gap-1 min-h-9 px-2.5 py-1.5 rounded-md border border-input bg-transparent text-sm focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+          {value.map((item) => (
+            <span key={item} className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium truncate">
+              {labelFor(item)}
+            </span>
+          ))}
+          <ComboboxChipsInput id={id} placeholder={value.length ? "" : placeholder} />
+        </div>
+      </ComboboxTrigger>
+      <ComboboxContent>
         <ComboboxEmpty>{emptyLabel}</ComboboxEmpty>
         <ComboboxList>
           {(item: string) => (
